@@ -1,13 +1,13 @@
 package core.driver;
 
+/**
+ * Các hành động lái xe có thể xảy ra.
+ * DrivingDecision đóng gói hành động + tham số bổ sung.
+ */
 public enum DrivingAction {
     ACCELERATE,
     BRAKE,
     STOP,
-    TURN_LEFT,
-    TURN_RIGHT,
-    GO_STRAIGHT,
-    CHANGE_LANE_LEFT,
-    CHANGE_LANE_RIGHT,
-    YIELD
+    YIELD,            // nhường đường
+    EMERGENCY_PASS    // vượt khẩn cấp (xe ưu tiên)
 }

@@ -1,28 +1,40 @@
 package core.simulation;
 
-import core.controller.TrafficController;
-import core.road.RoadNetwork;
+import core.trafficlight.TrafficLight;
 import core.vehicle.Vehicle;
+import java.util.*;
 
-import java.util.List;
-
+/**
+ * Trạng thái toàn cục của mô phỏng.
+ * Được truyền vào DriverBehavior.decide() để AI lái xe
+ * quan sát thế giới xung quanh (xe khác, đèn, đường…).
+ */
 public class SimulationWorld {
-    private final RoadNetwork roadNetwork;
-    private final List<Vehicle> vehicles;
-    private final List<TrafficController> controllers;
-    private final CollisionSystem collisionSystem;
-    private final StatisticsCollector statisticsCollector;
 
-    public void update(double deltaTime) {
-        for (TrafficController controller : controllers) {
-            controller.update(deltaTime);
-        }
+    private List<Vehicle>                   vehicles = new ArrayList<>();
+    private final Map<String, TrafficLight> lightMap = new HashMap<>();
 
-        for (Vehicle vehicle : vehicles) {
-            vehicle.update(deltaTime, this);
-        }
+    // ── Phương tiện ─────────────────────────────────────────────────
 
-        collisionSystem.resolve(vehicles);
-        statisticsCollector.collect(this);
+    public List<Vehicle> getVehicles() {
+        return Collections.unmodifiableList(vehicles);
+    }
+
+    public void setVehicles(List<Vehicle> v) { this.vehicles = new ArrayList<>(v); }
+    public void addVehicle(Vehicle v)        { vehicles.add(v);    }
+    public void removeVehicle(Vehicle v)     { vehicles.remove(v); }
+
+    // ── Đèn giao thông ──────────────────────────────────────────────
+
+    public void registerTrafficLight(TrafficLight light) {
+        lightMap.put(light.getId(), light);
+    }
+
+    public Optional<TrafficLight> findTrafficLight(String lightId) {
+        return Optional.ofNullable(lightMap.get(lightId));
+    }
+
+    public Collection<TrafficLight> getAllLights() {
+        return Collections.unmodifiableCollection(lightMap.values());
     }
 }

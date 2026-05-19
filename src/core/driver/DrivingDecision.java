@@ -1,15 +1,57 @@
 package core.driver;
 
-import core.road.Lane;
+/**
+ * Kết quả quyết định lái xe do {@link DriverBehavior} trả về.
+ * Vehicle.update() đọc quyết định này và thực thi — Vehicle không cần
+ * biết quyết định được ra như thế nào.
+ *
+ * <p>Dùng factory methods để tạo, tránh nhầm lẫn tham số:</p>
+ * <pre>
+ *   DrivingDecision.accelerate(80)   // tăng tốc đến 80 px/s
+ *   DrivingDecision.stop()           // dừng hẳn
+ *   DrivingDecision.yield()          // nhường đường, chậm lại
+ * </pre>
+ */
+public final class DrivingDecision {
 
-public class DrivingDecision {
-    private DrivingAction action;
-    private double targetSpeed;
-    private Lane targetLane;
+    private final DrivingAction action;
+    /** Tốc độ mục tiêu (px/s). Bằng 0 nếu action = STOP / YIELD. */
+    private final double targetSpeed;
 
-    public static DrivingDecision accelerate(double speed) {}
-    public static DrivingDecision brake() {}
-    public static DrivingDecision stop() {}
-    public static DrivingDecision changeLane(Lane lane) {}
-    public static DrivingDecision yield() {}
+    private DrivingDecision(DrivingAction action, double targetSpeed) {
+        this.action      = action;
+        this.targetSpeed = targetSpeed;
+    }
+
+    // ── Factory methods ──────────────────────────────────────────────
+
+    public static DrivingDecision accelerate(double targetSpeed) {
+        return new DrivingDecision(DrivingAction.ACCELERATE, targetSpeed);
+    }
+
+    public static DrivingDecision brake(double targetSpeed) {
+        return new DrivingDecision(DrivingAction.BRAKE, Math.max(0, targetSpeed));
+    }
+
+    public static DrivingDecision stop() {
+        return new DrivingDecision(DrivingAction.STOP, 0);
+    }
+
+    public static DrivingDecision yield() {
+        return new DrivingDecision(DrivingAction.YIELD, 0);
+    }
+
+    public static DrivingDecision emergencyPass(double targetSpeed) {
+        return new DrivingDecision(DrivingAction.EMERGENCY_PASS, targetSpeed);
+    }
+
+    // ── Getters ─────────────────────────────────────────────────────
+
+    public DrivingAction getAction()    { return action;      }
+    public double        getTargetSpeed() { return targetSpeed; }
+
+    @Override
+    public String toString() {
+        return "Decision[" + action + ", speed=" + targetSpeed + "]";
+    }
 }
