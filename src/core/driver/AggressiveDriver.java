@@ -1,5 +1,6 @@
 package core.driver;
 
+import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
 import core.vehicle.Vehicle;
