@@ -45,6 +45,14 @@ public final class DrivingDecision {
         return new DrivingDecision(DrivingAction.EMERGENCY_PASS, targetSpeed);
     }
 
+    public static DrivingDecision changeLaneLeft(double targetSpeed) {
+        return new DrivingDecision(DrivingAction.CHANGE_LANE_LEFT, targetSpeed);
+    }
+
+    public static DrivingDecision changeLaneRight(double targetSpeed) {
+        return new DrivingDecision(DrivingAction.CHANGE_LANE_RIGHT, targetSpeed);
+    }
+
     // ── Getters ─────────────────────────────────────────────────────
 
     public DrivingAction getAction()    { return action;      }

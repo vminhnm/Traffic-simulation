@@ -4,9 +4,8 @@ import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
 import core.simulation.SimulationWorld;
-import util.Vector2D;
-
 import java.util.List;
+import util.Vector2D;
 
 /**
  * <b>Lớp trừu tượng cho mọi phương tiện giao thông.</b>
@@ -157,6 +156,10 @@ public abstract class Vehicle implements Movable {
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 currentSpeed = Math.min(currentSpeed, maxSpeed * speedMultiplier());
+                
+                // Khi tăng tốc bình thường, xe dần quay trở về tâm làn đường
+                if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - 15 * deltaTime);
+                else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
             }
             case BRAKE -> {
                 double target = decision.getTargetSpeed();
@@ -169,7 +172,19 @@ public abstract class Vehicle implements Movable {
             case YIELD -> {
                 currentSpeed = Math.max(currentSpeed - acceleration * deltaTime, 0);
                 yielding     = true;
+                // Xe dạt sang lề phải để nhường đường cho xe ưu tiên
+                lateralOffset = Math.min(lateralOffset + 20 * deltaTime, 15);
                 if (currentSpeed == 0) stopped = true;
+            }
+            case CHANGE_LANE_LEFT -> {
+                double target = decision.getTargetSpeed();
+                currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
+                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -20); // Dạt trái
+            }
+            case CHANGE_LANE_RIGHT -> {
+                double target = decision.getTargetSpeed();
+                currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
+                lateralOffset = Math.min(lateralOffset + 25 * deltaTime, 20); // Dạt phải
             }
         }
     }
@@ -255,8 +270,13 @@ public abstract class Vehicle implements Movable {
      * đều chạy trên {@link RenderableState}, không trực tiếp trên Vehicle.
      */
     public RenderableState toRenderableState() {
+        // Tính toán tọa độ vẽ có áp dụng độ dạt ngang (lateralOffset)
+        // Dùng vector vuông góc với hướng di chuyển hiện tại
+        Vector2D rightVector = new Vector2D(Math.cos(rotation + Math.PI/2), Math.sin(rotation + Math.PI/2));
+        Vector2D renderPos = position.add(rightVector.multiply(lateralOffset));
+
         return RenderableState.builder(id)
-                .position(position)
+                .position(renderPos)
                 .rotation(rotation)
                 .length(length)
                 .width(width)

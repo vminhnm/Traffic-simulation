@@ -9,5 +9,7 @@ public enum DrivingAction {
     BRAKE,
     STOP,
     YIELD,            // nhường đường
-    EMERGENCY_PASS    // vượt khẩn cấp (xe ưu tiên)
+    EMERGENCY_PASS,   // vượt khẩn cấp (xe ưu tiên)
+    CHANGE_LANE_LEFT, // vượt / chuyển làn trái
+    CHANGE_LANE_RIGHT // vượt / chuyển làn phải / dạt vào lề
 }
