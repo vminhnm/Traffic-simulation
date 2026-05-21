@@ -1,0 +1,12 @@
+core\trafficlight\TrafficLightTest.class
+util\Vector2DTest.class
+core\driver\DrivingDecisionTest.class
+core\road\VehiclePathTest.class
+core\vehicle\VehicleFactoryTest.class
+core\vehicle\VehicleProfileTest.class
+core\driver\TrafficRuleEvaluatorTest$TestTrafficLight.class
+core\driver\TrafficRuleEvaluatorTest$TestVehicle.class
+core\simulation\SimulationWorldTest.class
+core\trafficlight\TrafficLightTest$TestTrafficLight.class
+core\vehicle\AmbulanceTest.class
+core\driver\TrafficRuleEvaluatorTest.class
