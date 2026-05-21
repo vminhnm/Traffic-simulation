@@ -1,23 +1,52 @@
 package core.vehicle;
 
-import java.util.List;
+import java.util.Arrays;
 
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import core.road.VehiclePath;
 import util.Vector2D;
 
-class AmbulanceTest {
+public class AmbulanceTest {
+
+    private VehiclePath createDummyPath() {
+        return new VehiclePath("path1", Arrays.asList(new Vector2D(0, 0), new Vector2D(10, 10)), 1, "lane1", "lane2", "light1");
+    }
 
     @Test
-    void shouldBePriorityVehicle() {
+    void testAmbulanceCreation() {
+        Ambulance ambulance = new Ambulance("AMB1", createDummyPath());
 
-        VehiclePath mockPath = new VehiclePath("mock_path", List.of(Vector2D.ZERO, new Vector2D(100, 0)), 0, "light_1", "N", "S");
+        assertNotNull(ambulance);
+    }
 
-        Ambulance ambulance =
-                new Ambulance("test-ambu", mockPath);
+    @Test
+    void testPriorityVehicle() {
+        Ambulance ambulance = new Ambulance("AMB1", createDummyPath());
 
-        assertTrue(ambulance instanceof PriorityVehicle);
+        assertTrue(ambulance.isPriorityVehicle());
+    }
+
+    @Test
+    void testInheritance() {
+        Ambulance ambulance = new Ambulance("AMB1", createDummyPath());
+
+        assertTrue(ambulance instanceof Vehicle);
+    }
+
+    @Test
+    void testVehicleHasProfile() {
+        Ambulance ambulance = new Ambulance("AMB1", createDummyPath());
+
+        assertNotNull(ambulance.getProfile());
+    }
+
+    @Test
+    void testVehicleHasId() {
+        Ambulance ambulance = new Ambulance("AMB1", createDummyPath());
+
+        assertNotNull(ambulance.getId());
     }
 }
