@@ -9,6 +9,11 @@ import util.Vector2D;
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
 
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Area;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
+
 import java.util.Comparator;
 import java.util.Optional;
 
@@ -179,5 +184,31 @@ public final class TrafficRuleEvaluator {
                 .map(v -> (PriorityVehicle) v)
                 .min(Comparator.comparingDouble(
                         pv -> pv.getPosition().distanceTo(self.getPosition())));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    //  Va chạm (Collision)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Kiểm tra xem hai xe có đang va chạm vật lý không (có tính đến góc xoay).
+     */
+    public boolean isColliding(Vehicle v1, Vehicle v2) {
+        Area area1 = getBoundingBox(v1);
+        Area area2 = getBoundingBox(v2);
+        
+        area1.intersect(area2);
+        return !area1.isEmpty(); // Nếu không rỗng nghĩa là có phần giao nhau (va chạm)
+    }
+
+    private Area getBoundingBox(Vehicle v) {
+        // Tạo hình chữ nhật với tâm ở (0, 0)
+        Rectangle2D.Double rect = new Rectangle2D.Double(
+                -v.getLength() / 2, -v.getWidth() / 2, v.getLength(), v.getWidth());
+        // Tịnh tiến và xoay
+        AffineTransform transform = new AffineTransform();
+        transform.translate(v.getPosition().x, v.getPosition().y);
+        transform.rotate(v.getRotation());
+        return new Area(new Path2D.Double(rect, transform));
     }
 }

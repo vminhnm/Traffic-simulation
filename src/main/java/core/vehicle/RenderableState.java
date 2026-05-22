@@ -26,6 +26,7 @@ public final class RenderableState {
     private final boolean   sirenFlash;    // trạng thái nháy đèn hiện tại
     private final boolean   isStopped;
     private final boolean   isYielding;
+    private final boolean   isCrashed;
     private final String    driverStyle;   // "Normal" / "Aggressive" / "Emergency"
 
     public RenderableState(Builder b) {
@@ -42,6 +43,7 @@ public final class RenderableState {
         this.sirenFlash  = b.sirenFlash;
         this.isStopped   = b.isStopped;
         this.isYielding  = b.isYielding;
+        this.isCrashed   = b.isCrashed;
         this.driverStyle = b.driverStyle;
     }
 
@@ -58,6 +60,7 @@ public final class RenderableState {
     public boolean  isSirenFlash()   { return sirenFlash;  }
     public boolean  isStopped()      { return isStopped;   }
     public boolean  isYielding()     { return isYielding;  }
+    public boolean  isCrashed()      { return isCrashed;   }
     public String   getDriverStyle() { return driverStyle; }
 
     // ── Builder ──────────────────────────────────────────────────────
@@ -78,6 +81,7 @@ public final class RenderableState {
         private boolean  sirenFlash = false;
         private boolean  isStopped  = false;
         private boolean  isYielding = false;
+        private boolean  isCrashed  = false;
         private String   driverStyle = "";
 
         private Builder(String id) { this.id = id; }
@@ -94,6 +98,7 @@ public final class RenderableState {
         public Builder sirenFlash(boolean v)   { sirenFlash  = v; return this; }
         public Builder isStopped(boolean v)    { isStopped   = v; return this; }
         public Builder isYielding(boolean v)   { isYielding  = v; return this; }
+        public Builder isCrashed(boolean v)    { isCrashed   = v; return this; }
         public Builder driverStyle(String v)   { driverStyle = v; return this; }
 
         public RenderableState build() { return new RenderableState(this); }

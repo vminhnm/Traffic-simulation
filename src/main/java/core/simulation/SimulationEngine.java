@@ -25,4 +25,12 @@ public class SimulationEngine {
     public void resume() {
         running = true;
     }
+
+    public boolean isRunning() {
+        return running;
+    }
+
+    public long getLastUpdateTime() {
+        return lastUpdateTime;
+    }
 }

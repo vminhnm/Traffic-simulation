@@ -3,6 +3,7 @@ package core.vehicle;
 import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
+import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import java.util.List;
 import util.Vector2D;
@@ -28,6 +29,8 @@ import util.Vector2D;
  * Renderer chỉ nhận snapshot này — không truy cập trực tiếp Vehicle.
  */
 public abstract class Vehicle implements Movable {
+
+    private static final TrafficRuleEvaluator RULES = new TrafficRuleEvaluator();
 
     // ── Định danh ────────────────────────────────────────────────────
     protected final String id;
@@ -63,6 +66,7 @@ public abstract class Vehicle implements Movable {
     // ── Trạng thái phụ ───────────────────────────────────────────────
     protected boolean stopped;
     protected boolean yielding;
+    protected boolean crashed;
     /** Bộ đếm thời gian nháy đèn (dùng cho xe ưu tiên). */
     protected double  flashTimer;
     protected boolean flashState;
@@ -125,7 +129,7 @@ public abstract class Vehicle implements Movable {
      * </ol>
      */
     public final void update(double deltaTime, SimulationWorld world) {
-        if (finished) return;
+        if (finished || crashed) return;
 
         // 1. Lấy quyết định từ bộ não lái
         DrivingDecision decision = driverBehavior.decide(this, world);
@@ -140,6 +144,21 @@ public abstract class Vehicle implements Movable {
 
         // 4. Cập nhật hiệu ứng phụ
         updateEffects(deltaTime);
+
+        // 5. Kiểm tra va chạm vật lý
+        checkCollisions(world);
+    }
+
+    /** Kiểm tra va chạm với các xe khác, nếu có thì cả hai dừng lại. */
+    private void checkCollisions(SimulationWorld world) {
+        for (Vehicle other : world.getVehicles()) {
+            if (other != this && !other.isCrashed()) {
+                if (RULES.isColliding(this, other)) {
+                    this.setCrashed();
+                    other.setCrashed();
+                }
+            }
+        }
     }
 
     /**
@@ -288,6 +307,7 @@ public abstract class Vehicle implements Movable {
                 .sirenFlash(flashState && isPriorityVehicle())
                 .isStopped(stopped)
                 .isYielding(yielding)
+                .isCrashed(crashed)
                 .driverStyle(driverBehavior.getStyleName())
                 .build();
     }
@@ -314,6 +334,14 @@ public abstract class Vehicle implements Movable {
     public boolean        isFinished()        { return finished;       }
     public boolean        isStopped()         { return stopped;        }
     public boolean        isYielding()        { return yielding;       }
+    public boolean        isCrashed()         { return crashed;        }
+
+    public void setCrashed() {
+        this.crashed = true;
+        this.currentSpeed = 0;
+        this.velocity = Vector2D.ZERO;
+    }
+
     public VehicleProfile getProfile()        { return profile;        }
     public DriverBehavior getDriverBehavior() { return driverBehavior; }
     public double         getLateralOffset()  { return lateralOffset;  }
