@@ -8,6 +8,7 @@ import core.driver.AggressiveDriver;
 import core.driver.EmergencyDriver;
 import core.driver.NormalDriver;
 import core.road.VehiclePath;
+import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationEngine;
 import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
@@ -62,6 +63,7 @@ public class TrafficSimulationUI extends Application {
     // ── Simulation core ────────────────────────────────────────────
     private SimulationWorld  world;
     private SimulationEngine engine;
+    private final TrafficRuleEvaluator rules = new TrafficRuleEvaluator();
     private AnimationTimer   gameLoop;
     private long             lastNano = 0;
 
@@ -452,10 +454,7 @@ public class TrafficSimulationUI extends Application {
                 if (b.isCrashed() || b.isFinished()) continue;
                 if (collisionCooldown.containsKey(b.getId())) continue;
 
-                // Simple AABB-style distance check (good enough at our scale)
-                double dist = a.getPosition().distanceTo(b.getPosition());
-                double minDist = (a.getLength() + b.getLength()) * 0.28;
-                if (dist < minDist) {
+                if (rules.isColliding(a, b)) {
                     // Ambulance/Firetruck should NOT be destroyed by normal traffic
                     // They push through — only flag the normal vehicle
                     if (a.isPriorityVehicle() && !b.isPriorityVehicle()) {

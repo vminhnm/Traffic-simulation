@@ -3,7 +3,6 @@ package core.vehicle;
 import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
-import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import java.util.List;
 import util.Vector2D;
@@ -29,8 +28,6 @@ import util.Vector2D;
  * Renderer chỉ nhận snapshot này — không truy cập trực tiếp Vehicle.
  */
 public abstract class Vehicle implements Movable {
-
-    private static final TrafficRuleEvaluator RULES = new TrafficRuleEvaluator();
 
     // ── Định danh ────────────────────────────────────────────────────
     protected final String id;
@@ -144,21 +141,6 @@ public abstract class Vehicle implements Movable {
 
         // 4. Cập nhật hiệu ứng phụ
         updateEffects(deltaTime);
-
-        // 5. Kiểm tra va chạm vật lý
-        checkCollisions(world);
-    }
-
-    /** Kiểm tra va chạm với các xe khác, nếu có thì cả hai dừng lại. */
-    private void checkCollisions(SimulationWorld world) {
-        for (Vehicle other : world.getVehicles()) {
-            if (other != this && !other.isCrashed()) {
-                if (RULES.isColliding(this, other)) {
-                    this.setCrashed();
-                    other.setCrashed();
-                }
-            }
-        }
     }
 
     /**
