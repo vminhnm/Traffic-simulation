@@ -46,8 +46,9 @@ public class AggressiveDriver implements DriverBehavior {
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;
 
         if (gap >= 0 && gap < safeDistance) {
-            double ratio = Math.max(0, gap / safeDistance);
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.4);
+            // Càng gần xe trước (gap nhỏ) thì lực phanh phải càng MẠNH. Lỗi cũ đang tính ngược.
+            double urgency = 1.0 - Math.max(0, gap / safeDistance);
+            return DrivingDecision.brake(vehicle.getMaxSpeed() * urgency);
         }
 
         // ── 4. Phóng nhanh hơn giới hạn ─────────────────────────────

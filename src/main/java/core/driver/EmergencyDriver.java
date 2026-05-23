@@ -33,6 +33,8 @@ public class EmergencyDriver implements DriverBehavior {
         double gap = RULES.gapToFrontVehicle(vehicle, world);
 
         if (gap >= 0 && gap < CRITICAL_GAP) {
+            // Nếu sát rạt (khoảng trống < 3px), bắt buộc dừng hẳn tránh đâm đuôi
+            if (gap < 3.0) return DrivingDecision.stop();
             // Giảm tốc vừa phải để chờ xe thường nhường đường
             return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
         }
