@@ -100,6 +100,9 @@ public class TrafficSimulationUI extends Application {
     private final java.util.Map<String,Double> collisionCooldown = new java.util.HashMap<>();
     private static final double COLLISION_COOLDOWN = 2.0; // seconds before a vehicle can collide
 
+    // ── Debug visualization ────────────────────────────────────────
+    private boolean showHitboxes = false;
+
     @Override
     public void start(Stage stage) {
         stage.setTitle("🚦 Traffic Simulation — Mô phỏng Giao thông");
@@ -280,6 +283,15 @@ public class TrafficSimulationUI extends Application {
             log("🚦 Đổi đèn thủ công.");
         });
 
+        Button btnToggleHitbox = new Button("📦 Ẩn Hitbox");
+        styleBtn(btnToggleHitbox, "#8b5cf6");
+        btnToggleHitbox.setMaxWidth(Double.MAX_VALUE);
+        btnToggleHitbox.setOnAction(e -> {
+            showHitboxes = !showHitboxes;
+            btnToggleHitbox.setText(showHitboxes ? "📦 Hiện Hitbox" : "📦 Ẩn Hitbox");
+            log(showHitboxes ? "📦 Hiện hitbox" : "📦 Ẩn hitbox");
+        });
+
         Label spdLbl = smallLbl("⚡ Tốc độ mô phỏng: 1.0×");
         Slider sldSpd = new Slider(0.1, 3.0, 1.0);
         styleSlider(sldSpd);
@@ -296,7 +308,7 @@ public class TrafficSimulationUI extends Application {
             spawnLbl.setText(String.format("🕐 Khoảng sinh xe: %.1fs", spawnInterval));
         });
 
-        panel.getChildren().addAll(btnStartPause, btnReset, btnSwitchLight,
+        panel.getChildren().addAll(btnStartPause, btnReset, btnSwitchLight, btnToggleHitbox,
                                    spdLbl, sldSpd, spawnLbl, sldSpawn);
         panel.getChildren().add(separator());
 
@@ -442,7 +454,7 @@ public class TrafficSimulationUI extends Application {
 
                 // Simple AABB-style distance check (good enough at our scale)
                 double dist = a.getPosition().distanceTo(b.getPosition());
-                double minDist = (a.getLength() + b.getLength()) * 0.38;
+                double minDist = (a.getLength() + b.getLength()) * 0.28;
                 if (dist < minDist) {
                     // Ambulance/Firetruck should NOT be destroyed by normal traffic
                     // They push through — only flag the normal vehicle
@@ -477,7 +489,10 @@ public class TrafficSimulationUI extends Application {
         }
 
         // Vehicles
-        for (Vehicle v : world.getVehicles()) drawVehicle(g, v.toRenderableState());
+        for (Vehicle v : world.getVehicles()) {
+            drawVehicle(g, v.toRenderableState());
+            if (showHitboxes) drawHitbox(g, v);
+        }
 
         // Pause overlay
         if (!engine.isRunning()) {
@@ -700,6 +715,19 @@ public class TrafficSimulationUI extends Application {
         g.restore();
     }
 
+    private void drawHitbox(GraphicsContext g, Vehicle v) {
+        Vector2D rightVector = new Vector2D(Math.cos(v.getRotation() + Math.PI/2), Math.sin(v.getRotation() + Math.PI/2));
+        Vector2D renderPos = v.getPosition().add(rightVector.multiply(v.getLateralOffset()));
+        double x = renderPos.x, y = renderPos.y;
+        g.save();
+        g.translate(x, y);
+        g.rotate(Math.toDegrees(v.getRotation()));
+        g.setStroke(Color.web("#00ff00", 0.7));
+        g.setLineWidth(1.5);
+        g.strokeRect(-v.getLength()/2, -v.getWidth()/2, v.getLength(), v.getWidth());
+        g.restore();
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  UI updates
     // ══════════════════════════════════════════════════════════════
@@ -798,25 +826,25 @@ public class TrafficSimulationUI extends Application {
 
     // ── 4-way ─────────────────────────────────────────────────────
     private VehiclePath makeNorthSouthPath(int lane) {
-        double x = cx() + LANE_W/2.0 + lane*LANE_W;
+        double x = cx() + LANE_W + lane*LANE_W;
         return new VehiclePath("ns"+lane, List.of(
             new Vector2D(x,-20), new Vector2D(x, cy()-ROAD_HALF-10),
             new Vector2D(x, cy()), new Vector2D(x, CANVAS_H+20)), 1,"light-NS","N","S");
     }
     private VehiclePath makeSouthNorthPath(int lane) {
-        double x = cx() - LANE_W/2.0 - lane*LANE_W;
+        double x = cx() - LANE_W - lane*LANE_W;
         return new VehiclePath("sn"+lane, List.of(
             new Vector2D(x,CANVAS_H+20), new Vector2D(x, cy()+ROAD_HALF+10),
             new Vector2D(x, cy()), new Vector2D(x,-20)), 1,"light-NS","S","N");
     }
     private VehiclePath makeEastWestPath(int lane) {
-        double y = cy() + LANE_W/2.0 + lane*LANE_W;
+        double y = cy() + LANE_W + lane*LANE_W;
         return new VehiclePath("ew"+lane, List.of(
             new Vector2D(CANVAS_W+20,y), new Vector2D(cx()+ROAD_HALF+10,y),
             new Vector2D(cx(),y), new Vector2D(-20,y)), 1,"light-EW","E","W");
     }
     private VehiclePath makeWestEastPath(int lane) {
-        double y = cy() - LANE_W/2.0 - lane*LANE_W;
+        double y = cy() - LANE_W - lane*LANE_W;
         return new VehiclePath("we"+lane, List.of(
             new Vector2D(-20,y), new Vector2D(cx()-ROAD_HALF-10,y),
             new Vector2D(cx(),y), new Vector2D(CANVAS_W+20,y)), 1,"light-EW","W","E");

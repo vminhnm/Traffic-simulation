@@ -33,7 +33,7 @@ public class Bus extends Vehicle {
                 .defaultMaxSpeed(65)
                 .defaultAcceleration(22)
                 .defaultLength(60)
-                .defaultWidth(22)
+                .defaultWidth(18)
                 .engineSound(SoundType.ENGINE_BUS)
                 .hornSound(SoundType.HORN_LONG)
                 .build();

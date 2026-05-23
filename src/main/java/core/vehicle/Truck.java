@@ -33,7 +33,7 @@ public class Truck extends Vehicle {
                 .defaultMaxSpeed(55)
                 .defaultAcceleration(15)        // gia tốc chậm
                 .defaultLength(72)              // dài nhất trong mô phỏng
-                .defaultWidth(26)
+                .defaultWidth(20)
                 .engineSound(SoundType.ENGINE_TRUCK)
                 .hornSound(SoundType.HORN_LONG)
                 .build();

@@ -198,12 +198,12 @@ public abstract class Vehicle implements Movable {
             case CHANGE_LANE_LEFT -> {
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
-                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -20); // Dạt trái
+                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -50); // Dạt trái
             }
             case CHANGE_LANE_RIGHT -> {
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
-                lateralOffset = Math.min(lateralOffset + 25 * deltaTime, 20); // Dạt phải
+                lateralOffset = Math.min(lateralOffset + 25 * deltaTime, 50); // Dạt phải
             }
         }
     }

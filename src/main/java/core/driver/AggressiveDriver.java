@@ -3,7 +3,10 @@ package core.driver;
 import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
+import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
+import util.Vector2D;
+import java.util.Optional;
 
 /**
  * <b>Lái xe hung hăng</b> — phóng nhanh, bỏ qua đèn vàng, bám sát xe trước.
@@ -25,20 +28,40 @@ public class AggressiveDriver implements DriverBehavior {
     private static final double SPEED_FACTOR = 1.25;
     /** Hệ số khoảng cách an toàn (nhỏ hơn → bám sát hơn). */
     private static final double SAFE_DIST_FACTOR = 0.6;
+    private static final double SAFETY_STOP_RANGE = 200.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        // ── 1. Chỉ dừng ở đèn ĐỎ (bỏ qua vàng) ────────────────────
+        // ── 1. Vẫn phải nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ──────
+        if (RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
+            Optional<PriorityVehicle> priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
+            if (priorityVehicle.isPresent()) {
+                PriorityVehicle pv = priorityVehicle.get();
+                String myPathId = vehicle.getPath().getId();
+                String theirPathId = pv.getPath().getId();
+
+                // Extract lane type (first 2-3 chars before numbers)
+                String myLaneType = myPathId.replaceAll("[0-9]", "");
+                String theirLaneType = theirPathId.replaceAll("[0-9]", "");
+
+                // Same lane → move out
+                if (myLaneType.equals(theirLaneType)) {
+                    return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.3);
+                }
+
+                // Different lane → stop if in range and not already moving out
+                double dist = vehicle.getPosition().distanceTo(pv.getPosition());
+                if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
+                    return DrivingDecision.stop();
+                }
+            }
+        }
+
+        // ── 2. Chỉ dừng ở đèn ĐỎ (bỏ qua vàng) ────────────────────
         LightColor color = RULES.getApproachingLightColor(vehicle, world);
         if (color == LightColor.RED && RULES.isNearStopLine(vehicle, world)) {
             return DrivingDecision.stop();
-        }
-
-        // ── 2. Vẫn phải nhường xe ưu tiên ──────────────────────────
-        if (RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
-            // Chỉ giảm tốc, không dừng hẳn như NormalDriver
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.3);
         }
 
         // ── 3. Khoảng cách bám sát ──────────────────────────────────
