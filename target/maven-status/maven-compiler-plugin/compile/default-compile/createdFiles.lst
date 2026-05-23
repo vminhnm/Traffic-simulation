@@ -1,12 +1,14 @@
 core\road\Route.class
 graphics\renderer\Renderer.class
 core\vehicle\Vehicle$1.class
+ui\TrafficSimulationUI$SimpleTrafficLight.class
 core\driver\EmergencyDriver.class
 util\Direction.class
 core\driver\DrivingAction.class
 core\vehicle\Bicycle.class
 core\controller\TrafficController.class
 graphics\sprite\RenderAssetKey.class
+ui\TrafficSimulationUI$1.class
 core\vehicle\RenderableState$Builder.class
 core\road\LaneType.class
 core\vehicle\Truck.class
@@ -50,7 +52,9 @@ core\simulation\SimulationWorld.class
 core\simulation\SimulationWorldFactory.class
 core\vehicle\PriorityVehicle.class
 util\Vector2D.class
+ui\TrafficSimulationUI$2.class
 core\vehicle\VehicleFactory.class
 core\rule\PriorityVehiclePolicy.class
 core\road\Lane.class
 app\AppConfig.class
+ui\TrafficSimulationUI.class
