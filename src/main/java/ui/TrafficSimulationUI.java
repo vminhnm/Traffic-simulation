@@ -1,14 +1,17 @@
 package ui;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import core.driver.AggressiveDriver;
 import core.driver.EmergencyDriver;
 import core.driver.NormalDriver;
 import core.road.VehiclePath;
-import core.rule.TrafficRuleEvaluator;
+import core.simulation.CollisionEvent;
+import core.simulation.CollisionManager;
 import core.simulation.SimulationEngine;
 import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
@@ -55,6 +58,8 @@ public class TrafficSimulationUI extends Application {
     // ── Road geometry constants ────────────────────────────────────
     private static final double ROAD_HALF = 50.0;
     private static final double LANE_W    = 22.0;
+    private static final double COLLISION_COOLDOWN = 2.0; // seconds before a vehicle can collide
+    private static final double CRASH_DISPLAY_SECONDS = 1.2;
 
     // ── Scenario modes ─────────────────────────────────────────────
     private enum ScenarioMode { FOUR_WAY, THREE_WAY, FIVE_WAY, GRID }
@@ -63,7 +68,7 @@ public class TrafficSimulationUI extends Application {
     // ── Simulation core ────────────────────────────────────────────
     private SimulationWorld  world;
     private SimulationEngine engine;
-    private final TrafficRuleEvaluator rules = new TrafficRuleEvaluator();
+    private final CollisionManager collisionManager = new CollisionManager(COLLISION_COOLDOWN);
     private AnimationTimer   gameLoop;
     private long             lastNano = 0;
 
@@ -73,7 +78,7 @@ public class TrafficSimulationUI extends Application {
     // ── UI refs ────────────────────────────────────────────────────
     private Canvas    canvas;
     private Label     lblTime, lblFPS;
-    private Label     statSpawned, statFinished, statCrashed;
+    private Label     statSpawned, statFinished, statCrashed, statCollisions, statThroughput, statAvgTravel;
     private Button    btnStartPause;
     private TextArea  logArea;
     private VBox      lightStatusBox;
@@ -84,6 +89,9 @@ public class TrafficSimulationUI extends Application {
     private final AtomicInteger totalSpawned  = new AtomicInteger(0);
     private final AtomicInteger totalFinished = new AtomicInteger(0);
     private final AtomicInteger totalCrashed  = new AtomicInteger(0);
+    private final AtomicInteger totalCollisions = new AtomicInteger(0);
+    private double totalTravelTime = 0;
+    private final Map<String, Double> spawnTimes = new HashMap<>();
 
     // ── Spawn ──────────────────────────────────────────────────────
     private double   spawnTimer    = 0;
@@ -99,8 +107,8 @@ public class TrafficSimulationUI extends Application {
     private double currentFPS = 0;
 
     // ── Collision cooldown: prevent instant re-crash after spawn ───
-    private final java.util.Map<String,Double> collisionCooldown = new java.util.HashMap<>();
-    private static final double COLLISION_COOLDOWN = 2.0; // seconds before a vehicle can collide
+    private final Map<String, Double> crashedDisplayTimers = new HashMap<>();
+    private final List<CollisionEffect> collisionEffects = new ArrayList<>();
 
     // ── Debug visualization ────────────────────────────────────────
     private boolean showHitboxes = false;
@@ -133,7 +141,9 @@ public class TrafficSimulationUI extends Application {
     private void initWorld() {
         world  = new SimulationWorld();
         engine = new SimulationEngine(world);
-        collisionCooldown.clear();
+        collisionManager.clear();
+        crashedDisplayTimers.clear();
+        collisionEffects.clear();
 
         lightNS = new SimpleTrafficLight("light-NS", LightColor.GREEN,  new LightTiming(18,3,18));
         lightEW = new SimpleTrafficLight("light-EW", LightColor.RED,    new LightTiming(18,3,18));
@@ -226,10 +236,16 @@ public class TrafficSimulationUI extends Application {
         statSpawned  = valueLbl("0");
         statFinished = valueLbl("0");
         statCrashed  = valueLbl("0");
+        statCollisions = valueLbl("0");
+        statThroughput = valueLbl("0.0/min");
+        statAvgTravel = valueLbl("--");
         panel.getChildren().addAll(
             statRow("🚗 Tổng xe đã tạo:", statSpawned),
             statRow("✅ Qua giao lộ:", statFinished),
-            statRow("💥 Va chạm:", statCrashed)
+            statRow("💥 Xe hỏng:", statCrashed),
+            statRow("⚠ Số vụ va chạm:", statCollisions),
+            statRow("📈 Lưu lượng:", statThroughput),
+            statRow("⏱ TG đi TB:", statAvgTravel)
         );
         panel.getChildren().add(separator());
 
@@ -423,11 +439,10 @@ public class TrafficSimulationUI extends Application {
                     engine.update(delta);
                     spawnTimer += delta;
                     if (spawnTimer >= spawnInterval) { spawnTimer = 0; autoSpawn(); }
-                    // advance cooldown timers
-                    collisionCooldown.replaceAll((k,v) -> v - delta);
-                    collisionCooldown.entrySet().removeIf(e -> e.getValue() <= 0);
-                    checkCollisionsManually(); // our safer collision check
-                    cleanupVehicles();
+                    collisionManager.updateCooldowns(delta);
+                    handleCollisionEvents(collisionManager.detectAndResolve(world));
+                    updateCollisionEffects(delta);
+                    cleanupVehicles(delta);
                 }
                 render();
                 updateUI();
@@ -437,40 +452,32 @@ public class TrafficSimulationUI extends Application {
     }
 
     // ══════════════════════════════════════════════════════════════
-    //  Collision detection (replace the one in Vehicle/RULES)
-    //  We do it here to respect cooldown so spawning vehicles don't
-    //  immediately crash into each other.
+    //  Collision event handling
     // ══════════════════════════════════════════════════════════════
-    private void checkCollisionsManually() {
-        List<Vehicle> vehicles = new ArrayList<>(world.getVehicles());
-        for (int i = 0; i < vehicles.size(); i++) {
-            Vehicle a = vehicles.get(i);
-            if (a.isCrashed() || a.isFinished()) continue;
-            // skip if in cooldown
-            if (collisionCooldown.containsKey(a.getId())) continue;
+    private void handleCollisionEvents(List<CollisionEvent> events) {
+        for (CollisionEvent event : events) {
+            totalCollisions.incrementAndGet();
+            collisionEffects.add(new CollisionEffect(event.getPosition(), 0.9));
 
-            for (int j = i+1; j < vehicles.size(); j++) {
-                Vehicle b = vehicles.get(j);
-                if (b.isCrashed() || b.isFinished()) continue;
-                if (collisionCooldown.containsKey(b.getId())) continue;
-
-                if (rules.isColliding(a, b)) {
-                    // Ambulance/Firetruck should NOT be destroyed by normal traffic
-                    // They push through — only flag the normal vehicle
-                    if (a.isPriorityVehicle() && !b.isPriorityVehicle()) {
-                        b.setCrashed();
-                        log("💥 Va chạm: " + b.getId() + " ← bị xe ưu tiên " + a.getId() + " đẩy");
-                    } else if (b.isPriorityVehicle() && !a.isPriorityVehicle()) {
-                        a.setCrashed();
-                        log("💥 Va chạm: " + a.getId() + " ← bị xe ưu tiên " + b.getId() + " đẩy");
-                    } else if (!a.isPriorityVehicle() && !b.isPriorityVehicle()) {
-                        a.setCrashed(); b.setCrashed();
-                        log("💥 Va chạm: " + a.getId() + " ↔ " + b.getId());
-                    }
-                    // two priority vehicles: neither crashes (they yield to each other)
+            Vehicle a = event.getFirst();
+            Vehicle b = event.getSecond();
+            switch (event.getType()) {
+                case PRIORITY_PUSH -> {
+                    Vehicle crashed = a.isPriorityVehicle() ? b : a;
+                    Vehicle priority = a.isPriorityVehicle() ? a : b;
+                    log("💥 Va chạm: " + crashed.getId() + " bị xe ưu tiên " + priority.getId() + " đẩy");
                 }
+                case NORMAL_CRASH -> log("💥 Va chạm: " + a.getId() + " ↔ " + b.getId());
+                case PRIORITY_YIELD -> log("⚠ Hai xe ưu tiên gặp nhau: " + a.getId() + " ↔ " + b.getId());
             }
         }
+    }
+
+    private void updateCollisionEffects(double deltaTime) {
+        for (CollisionEffect effect : collisionEffects) {
+            effect.remainingSeconds -= deltaTime;
+        }
+        collisionEffects.removeIf(effect -> effect.remainingSeconds <= 0);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -492,6 +499,7 @@ public class TrafficSimulationUI extends Application {
             drawVehicle(g, v.toRenderableState());
             if (showHitboxes) drawHitbox(g, v);
         }
+        drawCollisionEffects(g);
 
         // Pause overlay
         if (!engine.isRunning()) {
@@ -727,6 +735,21 @@ public class TrafficSimulationUI extends Application {
         g.restore();
     }
 
+    private void drawCollisionEffects(GraphicsContext g) {
+        for (CollisionEffect effect : collisionEffects) {
+            double progress = effect.remainingSeconds / effect.initialSeconds;
+            double radius = 28 * (1.0 - progress) + 8;
+            Vector2D p = effect.position;
+
+            g.setStroke(Color.web("#f97316", Math.max(0, progress)));
+            g.setLineWidth(3);
+            g.strokeOval(p.x - radius, p.y - radius, radius * 2, radius * 2);
+
+            g.setFill(Color.web("#ef4444", Math.max(0, progress * 0.55)));
+            g.fillOval(p.x - 5, p.y - 5, 10, 10);
+        }
+    }
+
     // ══════════════════════════════════════════════════════════════
     //  UI updates
     // ══════════════════════════════════════════════════════════════
@@ -736,6 +759,12 @@ public class TrafficSimulationUI extends Application {
         statSpawned.setText(String.valueOf(totalSpawned.get()));
         statFinished.setText(String.valueOf(totalFinished.get()));
         statCrashed.setText(String.valueOf(totalCrashed.get()));
+        statCollisions.setText(String.valueOf(totalCollisions.get()));
+        double minutes = Math.max(simTime / 60.0, 1.0 / 60.0);
+        statThroughput.setText(String.format("%.1f/min", totalFinished.get() / minutes));
+        statAvgTravel.setText(totalFinished.get() == 0
+                ? "--"
+                : String.format("%.1fs", totalTravelTime / totalFinished.get()));
         rebuildLightStatus();
     }
 
@@ -799,8 +828,8 @@ public class TrafficSimulationUI extends Application {
             Vehicle v = beh == null ? VehicleFactory.create(type, path)
                                     : VehicleFactory.create(type, path, beh);
             world.addVehicle(v);
-            // Give every newly spawned vehicle a cooldown so it can't immediately crash
-            collisionCooldown.put(v.getId(), COLLISION_COOLDOWN);
+            collisionManager.startSpawnCooldown(v);
+            spawnTimes.put(v.getId(), simTime);
             totalSpawned.incrementAndGet();
             log("🚗 " + type + " [" + v.getId() + "] " + path.getEntryArm() + "→" + path.getExitArm());
         } catch (Exception ex) {
@@ -808,11 +837,26 @@ public class TrafficSimulationUI extends Application {
         }
     }
 
-    private void cleanupVehicles() {
+    private void cleanupVehicles(double deltaTime) {
         List<Vehicle> rm = new ArrayList<>();
         for (Vehicle v : world.getVehicles()) {
-            if (v.isFinished()) { rm.add(v); totalFinished.incrementAndGet(); }
-            else if (v.isCrashed()) { rm.add(v); totalCrashed.incrementAndGet(); }
+            if (v.isFinished()) {
+                rm.add(v);
+                totalFinished.incrementAndGet();
+                Double spawnedAt = spawnTimes.remove(v.getId());
+                if (spawnedAt != null) totalTravelTime += Math.max(0, simTime - spawnedAt);
+            } else if (v.isCrashed()) {
+                double remaining = crashedDisplayTimers.getOrDefault(v.getId(), CRASH_DISPLAY_SECONDS);
+                remaining -= deltaTime;
+                if (remaining <= 0) {
+                    rm.add(v);
+                    crashedDisplayTimers.remove(v.getId());
+                    spawnTimes.remove(v.getId());
+                    totalCrashed.incrementAndGet();
+                } else {
+                    crashedDisplayTimers.put(v.getId(), remaining);
+                }
+            }
         }
         rm.forEach(world::removeVehicle);
     }
@@ -929,7 +973,9 @@ public class TrafficSimulationUI extends Application {
     private void resetSimulation() {
         if (engine!=null) engine.pause();
         simTime=0; spawnTimer=0; spawnRR=0; dirRR=0;
-        totalSpawned.set(0); totalFinished.set(0); totalCrashed.set(0);
+        totalSpawned.set(0); totalFinished.set(0); totalCrashed.set(0); totalCollisions.set(0);
+        totalTravelTime = 0;
+        spawnTimes.clear();
         initWorld();
         engine = new SimulationEngine(world);
         engine.start(); lastNano=0;
@@ -989,6 +1035,18 @@ public class TrafficSimulationUI extends Application {
                 case RED    -> { remainingTime=t.getGreenDuration();  yield LightColor.GREEN;  }
             };}
         @Override public boolean shouldShowCountdown() { return true; }
+    }
+
+    private static final class CollisionEffect {
+        private final Vector2D position;
+        private final double initialSeconds;
+        private double remainingSeconds;
+
+        private CollisionEffect(Vector2D position, double initialSeconds) {
+            this.position = position;
+            this.initialSeconds = initialSeconds;
+            this.remainingSeconds = initialSeconds;
+        }
     }
 
     public static void main(String[] args) { launch(args); }

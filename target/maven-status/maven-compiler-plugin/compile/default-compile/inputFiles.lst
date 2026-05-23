@@ -24,6 +24,8 @@
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/rule/PriorityVehiclePolicy.java
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/rule/SafeDistancePolicy.java
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/rule/TrafficRuleEvaluator.java
+/Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/simulation/CollisionEvent.java
+/Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/simulation/CollisionManager.java
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/simulation/SimulationEngine.java
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/simulation/SimulationWorld.java
 /Users/phamhanquochoai/Downloads/Local Documents/CodeSave/Java/OOP_Project/Traffic-simulation/src/main/java/core/simulation/SimulationWorldFactory.java

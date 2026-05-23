@@ -25,6 +25,7 @@ core/vehicle/Movable.class
 app/AppConfig.class
 core/road/Lane.class
 core/controller/LightControlStrategy.class
+ui/TrafficSimulationUI$2.class
 graphics/renderer/RenderMode.class
 core/intersection/Intersection.class
 util/MathUtils.class
