@@ -2,6 +2,7 @@ package core.driver;
 
 import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
+import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
 
 /**
@@ -27,7 +28,21 @@ public class EmergencyDriver implements DriverBehavior {
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        // Không kiểm tra đèn — xe khẩn cấp luôn đi
+        if (vehicle instanceof PriorityVehicle priorityVehicle
+                && !priorityVehicle.isSirenActive()) {
+            if (RULES.mustStopAtRedLight(vehicle, world)) {
+                return DrivingDecision.stop();
+            }
+
+            double gap = RULES.gapToFrontVehicle(vehicle, world);
+            double safeDistance = vehicle.getLength() * 1.5 + 15;
+            if (gap >= 0 && gap < safeDistance) {
+                double ratio = Math.max(0, gap / safeDistance);
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.6);
+            }
+
+            return DrivingDecision.accelerate(vehicle.getMaxSpeed());
+        }
 
         // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
         double gap = RULES.gapToFrontVehicle(vehicle, world);
