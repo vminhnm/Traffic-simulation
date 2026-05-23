@@ -1,5 +1,9 @@
 package ui;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import core.driver.AggressiveDriver;
 import core.driver.EmergencyDriver;
 import core.driver.NormalDriver;
@@ -9,9 +13,8 @@ import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
 import core.trafficlight.LightTiming;
 import core.trafficlight.TrafficLight;
-import core.vehicle.*;
-import util.Vector2D;
-
+import core.vehicle.Vehicle;
+import core.vehicle.VehicleFactory;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -20,429 +23,398 @@ import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
-import javafx.scene.control.*;
-import javafx.scene.layout.*;
+import javafx.scene.control.Button;
+import javafx.scene.control.ComboBox;
+import javafx.scene.control.Label;
+import javafx.scene.control.ScrollPane;
+import javafx.scene.control.Separator;
+import javafx.scene.control.Slider;
+import javafx.scene.control.TextArea;
+import javafx.scene.control.ToggleButton;
+import javafx.scene.control.ToggleGroup;
+import javafx.scene.effect.Glow;
+import javafx.scene.layout.BorderPane;
+import javafx.scene.layout.HBox;
+import javafx.scene.layout.Priority;
+import javafx.scene.layout.Region;
+import javafx.scene.layout.StackPane;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import util.Vector2D;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
-
-/**
- * Giao diện JavaFX cho hệ thống mô phỏng giao thông.
- * Tích hợp trực tiếp với SimulationEngine, SimulationWorld, Vehicle, TrafficLight.
- */
 public class TrafficSimulationUI extends Application {
 
-    // ── Kích thước ────────────────────────────────────────────────────
-    private static final int CANVAS_W = 860;
-    private static final int CANVAS_H = 660;
+    // ── Canvas size ────────────────────────────────────────────────
+    private static final int CANVAS_W = 820;
+    private static final int CANVAS_H = 620;
 
-    // ── Center của giao lộ ────────────────────────────────────────────
-    private static final double CX = CANVAS_W / 2.0;
-    private static final double CY = CANVAS_H / 2.0;
-    private static final double ROAD_HALF = 55;   // nửa chiều rộng đường
-    private static final double LANE_W    = 25;   // chiều rộng 1 làn
+    // ── Road geometry constants ────────────────────────────────────
+    private static final double ROAD_HALF = 50.0;
+    private static final double LANE_W    = 22.0;
 
-    // ── Simulation core ───────────────────────────────────────────────
-    private SimulationWorld world;
+    // ── Scenario modes ─────────────────────────────────────────────
+    private enum ScenarioMode { FOUR_WAY, THREE_WAY, FIVE_WAY, GRID }
+    private ScenarioMode currentMode = ScenarioMode.FOUR_WAY;
+
+    // ── Simulation core ────────────────────────────────────────────
+    private SimulationWorld  world;
     private SimulationEngine engine;
-    private AnimationTimer gameLoop;
-    private long lastNano = 0;
+    private AnimationTimer   gameLoop;
+    private long             lastNano = 0;
 
-    // ── UI components ──────────────────────────────────────────────────
-    private Canvas canvas;
-    private Label  lblVehicleCount;
-    private Label  lblTime;
-    private Label  lblFPS;
-    private Label  lblLightNorth;
-    private Label  lblLightSouth;
-    private Label  lblLightEast;
-    private Label  lblLightWest;
-    private Slider sldSpeed;
-    private Button btnStartPause;
-    private TextArea logArea;
+    // ── Traffic lights ─────────────────────────────────────────────
+    private SimpleTrafficLight lightNS, lightEW, lightNE, lightNW, lightSE;
 
-    // ── Stats ──────────────────────────────────────────────────────────
-    private double simTime = 0;
-    private double simSpeedMul = 1.0;
-    private final AtomicInteger totalSpawned = new AtomicInteger(0);
+    // ── UI refs ────────────────────────────────────────────────────
+    private Canvas    canvas;
+    private Label     lblTime, lblFPS;
+    private Label     statSpawned, statFinished, statCrashed;
+    private Button    btnStartPause;
+    private TextArea  logArea;
+    private VBox      lightStatusBox;
+
+    // ── Stats ──────────────────────────────────────────────────────
+    private double          simTime      = 0;
+    private double          simSpeedMul  = 1.0;
+    private final AtomicInteger totalSpawned  = new AtomicInteger(0);
     private final AtomicInteger totalFinished = new AtomicInteger(0);
-    private final AtomicInteger totalCrashed = new AtomicInteger(0);
+    private final AtomicInteger totalCrashed  = new AtomicInteger(0);
 
-    // ── Traffic lights (4-way) ─────────────────────────────────────────
-    private SimpleTrafficLight lightNS; // North-South green
-    private SimpleTrafficLight lightEW; // East-West green
+    // ── Spawn ──────────────────────────────────────────────────────
+    private double   spawnTimer    = 0;
+    private double   spawnInterval = 3.5;
+    private int      spawnRR       = 0;
+    private int      dirRR         = 0;
+    private static final String[] AUTO_TYPES =
+        {"car","car","car","car","motorbike","motorbike","bus","truck","bicycle","car","car","car"};
 
-    // ── Spawn control ──────────────────────────────────────────────────
-    private double spawnTimer = 0;
-    private double spawnInterval = 3.0;
-    private final String[] VEHICLE_TYPES = {"car", "car", "car", "motorbike", "bus", "truck", "ambulance", "bicycle"};
-    private int spawnRoundRobin = 0;
-    private int spawnDirectionRR = 0;
-
-    // ── FPS counter ────────────────────────────────────────────────────
-    private long frameCount = 0;
-    private double fpsTimer = 0;
+    // ── FPS ────────────────────────────────────────────────────────
+    private long   frameCount = 0;
+    private double fpsTimer   = 0;
     private double currentFPS = 0;
+
+    // ── Collision cooldown: prevent instant re-crash after spawn ───
+    private final java.util.Map<String,Double> collisionCooldown = new java.util.HashMap<>();
+    private static final double COLLISION_COOLDOWN = 2.0; // seconds before a vehicle can collide
 
     @Override
     public void start(Stage stage) {
         stage.setTitle("🚦 Traffic Simulation — Mô phỏng Giao thông");
-
-        // ── Build world ────────────────────────────────────────────────
         initWorld();
 
-        // ── Build UI ───────────────────────────────────────────────────
         BorderPane root = new BorderPane();
         root.setStyle("-fx-background-color: #1a1a2e;");
-
         root.setTop(buildHeader());
         root.setCenter(buildCanvasArea());
         root.setRight(buildControlPanel());
         root.setBottom(buildStatusBar());
 
-        Scene scene = new Scene(root, CANVAS_W + 320, CANVAS_H + 100);
+        Scene scene = new Scene(root, CANVAS_W + 310, CANVAS_H + 56);
         stage.setScene(scene);
         stage.setResizable(false);
         stage.show();
 
-        // ── Start loop ─────────────────────────────────────────────────
         startGameLoop();
         engine.start();
-        log("✅ Mô phỏng khởi động. Hãy nhấn Tạm dừng để dừng.");
+        log("✅ Mô phỏng khởi động — chế độ: " + modeName(currentMode));
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  World Initialization
-    // ════════════════════════════════════════════════════════════════════
-
+    // ══════════════════════════════════════════════════════════════
+    //  World init
+    // ══════════════════════════════════════════════════════════════
     private void initWorld() {
         world  = new SimulationWorld();
         engine = new SimulationEngine(world);
+        collisionCooldown.clear();
 
-        // Tạo 4 đèn giao thông
-        lightNS = new SimpleTrafficLight("light-NS", LightColor.GREEN,
-                new LightTiming(20, 3, 20));
-        lightEW = new SimpleTrafficLight("light-EW", LightColor.RED,
-                new LightTiming(20, 3, 20));
-        lightEW.forceRed();   // bắt đầu: NS xanh, EW đỏ
+        lightNS = new SimpleTrafficLight("light-NS", LightColor.GREEN,  new LightTiming(18,3,18));
+        lightEW = new SimpleTrafficLight("light-EW", LightColor.RED,    new LightTiming(18,3,18));
+        lightNE = new SimpleTrafficLight("light-NE", LightColor.RED,    new LightTiming(18,3,18));
+        lightNW = new SimpleTrafficLight("light-NW", LightColor.GREEN,  new LightTiming(18,3,18));
+        lightSE = new SimpleTrafficLight("light-SE", LightColor.RED,    new LightTiming(18,3,18));
+
+        lightEW.forceRed();
+        lightNE.forceRed();
+        lightSE.forceRed();
 
         world.registerTrafficLight(lightNS);
         world.registerTrafficLight(lightEW);
+        world.registerTrafficLight(lightNE);
+        world.registerTrafficLight(lightNW);
+        world.registerTrafficLight(lightSE);
 
-        // Tạo vài xe ban đầu
-        spawnVehicle("car",      makeNorthSouthPath());
-        spawnVehicle("bus",      makeEastWestPath());
-        spawnVehicle("car",      makeSouthNorthPath());
-        spawnVehicle("ambulance",makeWestEastPath());
+        // Seed a few vehicles with staggered starting positions
+        switch (currentMode) {
+            case FOUR_WAY -> seedFourWay();
+            case THREE_WAY -> seedThreeWay();
+            case FIVE_WAY -> seedFiveWay();
+            case GRID -> seedGrid();
+        }
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  UI Builders
-    // ════════════════════════════════════════════════════════════════════
+    private void seedFourWay() {
+        spawnAt("car",       makeNorthSouthPath(0), 0);
+        spawnAt("bus",       makeEastWestPath(0),   0);
+        spawnAt("car",       makeSouthNorthPath(0), 0);
+        spawnAt("ambulance", makeWestEastPath(0),   0);
+    }
+    private void seedThreeWay() {
+        spawnAt("car", makeThreeWayPath(0), 0);
+        spawnAt("car", makeThreeWayPath(1), 0);
+    }
+    private void seedFiveWay() {
+        for (int i = 0; i < 3; i++) spawnAt("car", makeFiveWayPath(i), 0);
+        spawnAt("ambulance", makeFiveWayPath(3), 0);
+    }
+    private void seedGrid() {
+        spawnAt("car",  makeGridPath(0), 0);
+        spawnAt("bus",  makeGridPath(1), 0);
+        spawnAt("car",  makeGridPath(2), 0);
+        spawnAt("truck",makeGridPath(3), 0);
+        spawnAt("ambulance", makeGridPath(4), 0);
+    }
 
+    // ══════════════════════════════════════════════════════════════
+    //  UI Builders
+    // ══════════════════════════════════════════════════════════════
     private HBox buildHeader() {
-        HBox hb = new HBox(12);
-        hb.setPadding(new Insets(14, 20, 10, 20));
+        HBox hb = new HBox(14);
+        hb.setPadding(new Insets(12,20,10,20));
         hb.setAlignment(Pos.CENTER_LEFT);
         hb.setStyle("-fx-background-color: #16213e;");
 
         Label title = new Label("🚦 Traffic Simulation");
-        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 22));
+        title.setFont(Font.font("Segoe UI", FontWeight.BOLD, 21));
         title.setTextFill(Color.web("#e2e8f0"));
 
         Label sub = new Label("Mô phỏng Giao thông Thông minh");
-        sub.setFont(Font.font("Segoe UI", 13));
+        sub.setFont(Font.font("Segoe UI", 12));
         sub.setTextFill(Color.web("#94a3b8"));
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        lblFPS = new Label("FPS: --");
+        lblFPS.setFont(Font.font("Segoe UI",FontWeight.BOLD,13));
+        lblFPS.setTextFill(Color.web("#64ffda"));
 
-        lblFPS = styledLabel("FPS: --", "#64ffda");
-
-        hb.getChildren().addAll(title, sub, spacer, lblFPS);
+        hb.getChildren().addAll(title, sub, sp, lblFPS);
         return hb;
     }
 
     private StackPane buildCanvasArea() {
         canvas = new Canvas(CANVAS_W, CANVAS_H);
         StackPane sp = new StackPane(canvas);
-        sp.setStyle("-fx-background-color: #0f3460;");
+        sp.setStyle("-fx-background-color: #0d1b2a;");
         return sp;
     }
 
-    private VBox buildControlPanel() {
-        VBox panel = new VBox(14);
-        panel.setPadding(new Insets(16, 16, 16, 12));
+    private ScrollPane buildControlPanel() {
+        VBox panel = new VBox(12);
+        panel.setPadding(new Insets(14,14,14,10));
         panel.setPrefWidth(305);
-        panel.setStyle("-fx-background-color: #16213e; -fx-border-color: #0f3460; -fx-border-width: 0 0 0 2;");
+        panel.setStyle("-fx-background-color: #16213e;");
 
+        // ── Stats ──────────────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("📊 Thống kê"));
+        statSpawned  = valueLbl("0");
+        statFinished = valueLbl("0");
+        statCrashed  = valueLbl("0");
         panel.getChildren().addAll(
-            sectionLabel("📊 Thống kê"),
-            buildStatsBox(),
-            new Separator(),
-            sectionLabel("🚦 Đèn Giao thông"),
-            buildLightStatusBox(),
-            new Separator(),
-            sectionLabel("🎛️ Điều khiển"),
-            buildControlsBox(),
-            new Separator(),
-            sectionLabel("➕ Thêm Phương tiện"),
-            buildSpawnBox(),
-            new Separator(),
-            sectionLabel("📝 Nhật ký"),
-            buildLogBox()
+            statRow("🚗 Tổng xe đã tạo:", statSpawned),
+            statRow("✅ Qua giao lộ:", statFinished),
+            statRow("💥 Va chạm:", statCrashed)
         );
-        return panel;
-    }
+        panel.getChildren().add(separator());
 
-    private HBox buildStatusBar() {
-        HBox hb = new HBox(20);
-        hb.setPadding(new Insets(6, 20, 6, 20));
-        hb.setAlignment(Pos.CENTER_LEFT);
-        hb.setStyle("-fx-background-color: #0f3460;");
+        // ── Scenario chooser ───────────────────────────────────────
+        panel.getChildren().add(sectionLbl("🗺 Chọn Kịch bản"));
+        ToggleGroup tg = new ToggleGroup();
+        HBox scRow1 = new HBox(6);
+        HBox scRow2 = new HBox(6);
+        for (ScenarioMode m : ScenarioMode.values()) {
+            ToggleButton tb = new ToggleButton(scenarioIcon(m) + " " + modeName(m));
+            tb.setToggleGroup(tg);
+            tb.setSelected(m == currentMode);
+            tb.setStyle(toggleStyle(m == currentMode));
+            tb.setOnAction(e -> {
+                currentMode = m;
+                for (javafx.scene.Node n : scRow1.getChildren()) styleToggle((ToggleButton)n, tg);
+                for (javafx.scene.Node n : scRow2.getChildren()) styleToggle((ToggleButton)n, tg);
+                resetSimulation();
+            });
+            tb.selectedProperty().addListener((obs,ov,nv) -> tb.setStyle(toggleStyle(nv)));
+            if (m == ScenarioMode.FOUR_WAY || m == ScenarioMode.THREE_WAY) scRow1.getChildren().add(tb);
+            else scRow2.getChildren().add(tb);
+            HBox.setHgrow(tb, Priority.ALWAYS); tb.setMaxWidth(Double.MAX_VALUE);
+        }
+        panel.getChildren().addAll(scRow1, scRow2);
+        panel.getChildren().add(separator());
 
-        lblTime = styledLabel("⏱ Thời gian: 0.0s", "#94a3b8");
-        lblVehicleCount = styledLabel("🚗 Xe: 0", "#94a3b8");
-        Label credit = new Label("Traffic Simulation v1.0 — JavaFX UI");
-        credit.setTextFill(Color.web("#475569"));
-        credit.setFont(Font.font("Segoe UI", 11));
+        // ── Traffic lights ─────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("🚦 Trạng thái Đèn"));
+        lightStatusBox = new VBox(5);
+        panel.getChildren().add(lightStatusBox);
+        panel.getChildren().add(separator());
 
-        Region spacer = new Region();
-        HBox.setHgrow(spacer, Priority.ALWAYS);
-        hb.getChildren().addAll(lblTime, lblVehicleCount, spacer, credit);
-        return hb;
-    }
+        // ── Controls ───────────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("🎛️ Điều khiển"));
 
-    private VBox buildStatsBox() {
-        VBox box = new VBox(6);
-
-        Label lSpawned  = createStatRow("Đã tạo:");
-        Label lFinished = createStatRow("Đã qua giao lộ:");
-        Label lCrashed  = createStatRow("Va chạm:");
-
-        // refresh trong game loop
-        this.lblVehicleCount = lSpawned;
-
-        box.getChildren().addAll(
-            makeStatLine("🚗 Đã tạo:", lSpawned),
-            makeStatLine("✅ Qua giao lộ:", lFinished),
-            makeStatLine("💥 Va chạm:", lCrashed)
-        );
-
-        // Store references
-        this.statFinished = lFinished;
-        this.statCrashed  = lCrashed;
-
-        return box;
-    }
-
-    private Label statFinished, statCrashed;
-
-    private HBox makeStatLine(String label, Label value) {
-        Label lbl = new Label(label);
-        lbl.setTextFill(Color.web("#94a3b8"));
-        lbl.setFont(Font.font("Segoe UI", 12));
-        lbl.setMinWidth(130);
-        value.setTextFill(Color.web("#64ffda"));
-        value.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
-        HBox hb = new HBox(6, lbl, value);
-        hb.setAlignment(Pos.CENTER_LEFT);
-        return hb;
-    }
-
-    private VBox buildLightStatusBox() {
-        VBox box = new VBox(6);
-        lblLightNorth = lightIndicator("Bắc–Nam:");
-        lblLightSouth = lightIndicator("Nam–Bắc:");
-        lblLightEast  = lightIndicator("Đông–Tây:");
-        lblLightWest  = lightIndicator("Tây–Đông:");
-
-        box.getChildren().addAll(
-            makeLightRow("🔴 Bắc–Nam:", lblLightNorth),
-            makeLightRow("🔴 Nam–Bắc:", lblLightSouth),
-            makeLightRow("🔴 Đông–Tây:", lblLightEast),
-            makeLightRow("🔴 Tây–Đông:", lblLightWest)
-        );
-        return box;
-    }
-
-    private HBox makeLightRow(String dir, Label indicator) {
-        Label d = new Label(dir);
-        d.setTextFill(Color.web("#94a3b8"));
-        d.setFont(Font.font("Segoe UI", 12));
-        d.setMinWidth(110);
-        HBox hb = new HBox(6, d, indicator);
-        hb.setAlignment(Pos.CENTER_LEFT);
-        return hb;
-    }
-
-    private VBox buildControlsBox() {
-        VBox box = new VBox(10);
-
-        // Start/Pause
         btnStartPause = new Button("⏸ Tạm dừng");
-        styleButton(btnStartPause, "#3b82f6");
+        styleBtn(btnStartPause, "#3b82f6");
         btnStartPause.setMaxWidth(Double.MAX_VALUE);
         btnStartPause.setOnAction(e -> togglePause());
 
-        // Reset
         Button btnReset = new Button("🔄 Đặt lại");
-        styleButton(btnReset, "#6366f1");
+        styleBtn(btnReset, "#6366f1");
         btnReset.setMaxWidth(Double.MAX_VALUE);
         btnReset.setOnAction(e -> resetSimulation());
 
-        // Speed control
-        Label spdLabel = new Label("⚡ Tốc độ mô phỏng: 1.0×");
-        spdLabel.setTextFill(Color.web("#94a3b8"));
-        spdLabel.setFont(Font.font("Segoe UI", 12));
-
-        sldSpeed = new Slider(0.1, 3.0, 1.0);
-        sldSpeed.setShowTickMarks(true);
-        sldSpeed.setMajorTickUnit(0.5);
-        sldSpeed.setStyle("-fx-control-inner-background: #1e3a5f;");
-        sldSpeed.valueProperty().addListener((obs, ov, nv) -> {
-            simSpeedMul = nv.doubleValue();
-            spdLabel.setText(String.format("⚡ Tốc độ mô phỏng: %.1f×", simSpeedMul));
-        });
-
-        // Spawn interval
-        Label spawnLabel = new Label("🕐 Khoảng cách sinh xe: 3.0s");
-        spawnLabel.setTextFill(Color.web("#94a3b8"));
-        spawnLabel.setFont(Font.font("Segoe UI", 12));
-
-        Slider sldSpawn = new Slider(0.5, 8.0, 3.0);
-        sldSpawn.setShowTickMarks(true);
-        sldSpawn.setMajorTickUnit(1.0);
-        sldSpawn.setStyle("-fx-control-inner-background: #1e3a5f;");
-        sldSpawn.valueProperty().addListener((obs, ov, nv) -> {
-            spawnInterval = nv.doubleValue();
-            spawnLabel.setText(String.format("🕐 Khoảng cách sinh xe: %.1fs", spawnInterval));
-        });
-
-        // Manual light switch
         Button btnSwitchLight = new Button("🚦 Đổi đèn thủ công");
-        styleButton(btnSwitchLight, "#0ea5e9");
+        styleBtn(btnSwitchLight, "#0ea5e9");
         btnSwitchLight.setMaxWidth(Double.MAX_VALUE);
         btnSwitchLight.setOnAction(e -> {
-            lightNS.switchManually();
-            lightEW.switchManually();
+            lightNS.switchManually(); lightEW.switchManually();
+            lightNE.switchManually(); lightNW.switchManually(); lightSE.switchManually();
             log("🚦 Đổi đèn thủ công.");
         });
 
-        box.getChildren().addAll(
-            btnStartPause, btnReset,
-            spdLabel, sldSpeed,
-            spawnLabel, sldSpawn,
-            btnSwitchLight
-        );
-        return box;
-    }
-
-    private VBox buildSpawnBox() {
-        VBox box = new VBox(8);
-
-        String[] types = {"car", "motorbike", "bus", "truck", "bicycle", "ambulance", "firetruck"};
-        String[] labels = {"🚗 Ô tô", "🏍 Mô tô", "🚌 Xe buýt", "🚚 Xe tải", "🚲 Xe đạp", "🚑 Cứu thương", "🚒 Cứu hỏa"};
-        String[] fromLabels = {"Bắc→Nam", "Nam→Bắc", "Đông→Tây", "Tây→Đông"};
-
-        ComboBox<String> cbType = new ComboBox<>();
-        cbType.getItems().addAll(labels);
-        cbType.setValue(labels[0]);
-        styleCombo(cbType);
-
-        ComboBox<String> cbFrom = new ComboBox<>();
-        cbFrom.getItems().addAll(fromLabels);
-        cbFrom.setValue(fromLabels[0]);
-        styleCombo(cbFrom);
-
-        ComboBox<String> cbDriver = new ComboBox<>();
-        cbDriver.getItems().addAll("Normal", "Aggressive", "Emergency");
-        cbDriver.setValue("Normal");
-        styleCombo(cbDriver);
-
-        Button btnSpawn = new Button("➕ Thêm xe");
-        styleButton(btnSpawn, "#10b981");
-        btnSpawn.setMaxWidth(Double.MAX_VALUE);
-        btnSpawn.setOnAction(e -> {
-            String type = types[cbType.getSelectionModel().getSelectedIndex()];
-            int dirIdx  = cbFrom.getSelectionModel().getSelectedIndex();
-            String drv  = cbDriver.getValue();
-            VehiclePath path = getPathByDirection(dirIdx);
-            var behavior = switch (drv) {
-                case "Aggressive" -> new AggressiveDriver();
-                case "Emergency"  -> new EmergencyDriver();
-                default           -> new NormalDriver();
-            };
-            spawnVehicleWithBehavior(type, path, behavior);
+        Label spdLbl = smallLbl("⚡ Tốc độ mô phỏng: 1.0×");
+        Slider sldSpd = new Slider(0.1, 3.0, 1.0);
+        styleSlider(sldSpd);
+        sldSpd.valueProperty().addListener((obs, oldVal, nv) -> {
+            simSpeedMul = nv.doubleValue();
+            spdLbl.setText(String.format("⚡ Tốc độ mô phỏng: %.1f×", simSpeedMul));
         });
 
-        box.getChildren().addAll(
-            labelSmall("Loại xe:"), cbType,
-            labelSmall("Hướng đi:"), cbFrom,
-            labelSmall("Kiểu lái:"), cbDriver,
-            btnSpawn
-        );
-        return box;
-    }
+        Label spawnLbl = smallLbl("🕐 Khoảng sinh xe: 3.5s");
+        Slider sldSpawn = new Slider(0.5, 10.0, 3.5);
+        styleSlider(sldSpawn);
+        sldSpawn.valueProperty().addListener((obs, oldVal, nv) -> {
+            spawnInterval = nv.doubleValue();
+            spawnLbl.setText(String.format("🕐 Khoảng sinh xe: %.1fs", spawnInterval));
+        });
 
-    private ScrollPane buildLogBox() {
+        panel.getChildren().addAll(btnStartPause, btnReset, btnSwitchLight,
+                                   spdLbl, sldSpd, spawnLbl, sldSpawn);
+        panel.getChildren().add(separator());
+
+        // ── Manual spawn ───────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("➕ Thêm Phương tiện"));
+
+        String[] typeLabels = {"🚗 Ô tô","🏍 Mô tô","🚌 Xe buýt","🚚 Xe tải",
+                               "🚲 Xe đạp","🚑 Cứu thương","🚒 Cứu hỏa"};
+        String[] typeKeys   = {"car","motorbike","bus","truck","bicycle","ambulance","firetruck"};
+
+        ComboBox<String> cbType = new ComboBox<>();
+        cbType.getItems().addAll(typeLabels); cbType.setValue(typeLabels[0]);
+        styleCombo(cbType);
+
+        // Direction options depend on mode — rebuilt on reset
+        ComboBox<String> cbDir = new ComboBox<>();
+        rebuildDirCombo(cbDir);
+
+        ComboBox<String> cbDriver = new ComboBox<>();
+        cbDriver.getItems().addAll("🧑 Normal","😤 Aggressive","🚨 Emergency");
+        cbDriver.setValue("🧑 Normal");
+        styleCombo(cbDriver);
+
+        Button btnAdd = new Button("➕ Thêm xe ngay");
+        styleBtn(btnAdd, "#10b981");
+        btnAdd.setMaxWidth(Double.MAX_VALUE);
+        btnAdd.setOnAction(e -> {
+            String typeKey = typeKeys[cbType.getSelectionModel().getSelectedIndex()];
+            int dirIdx     = cbDir.getSelectionModel().getSelectedIndex();
+            var path       = getPathByModeAndDir(dirIdx);
+            var drv = switch (cbDriver.getSelectionModel().getSelectedIndex()) {
+                case 1 -> new AggressiveDriver();
+                case 2 -> new EmergencyDriver();
+                default -> new NormalDriver();
+            };
+            doSpawn(typeKey, path, drv);
+        });
+
+        panel.getChildren().addAll(
+            smallLbl("Loại xe:"), cbType,
+            smallLbl("Hướng đi:"), cbDir,
+            smallLbl("Kiểu lái:"), cbDriver,
+            btnAdd
+        );
+        panel.getChildren().add(separator());
+
+        // ── Log ───────────────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("📝 Nhật ký"));
         logArea = new TextArea();
         logArea.setEditable(false);
-        logArea.setPrefHeight(130);
-        logArea.setStyle(
-            "-fx-control-inner-background: #0f3460;" +
-            "-fx-text-fill: #94a3b8;" +
-            "-fx-font-family: 'Consolas'; -fx-font-size: 10;"
-        );
-        ScrollPane sp = new ScrollPane(logArea);
+        logArea.setPrefHeight(120);
+        logArea.setStyle("-fx-control-inner-background:#0f3460;-fx-text-fill:#94a3b8;" +
+                         "-fx-font-family:Consolas;-fx-font-size:10;");
+        panel.getChildren().add(logArea);
+
+        ScrollPane sp = new ScrollPane(panel);
         sp.setFitToWidth(true);
-        sp.setStyle("-fx-background: #0f3460; -fx-border-color: transparent;");
+        sp.setStyle("-fx-background:#16213e;-fx-background-color:#16213e;" +
+                    "-fx-border-color:#0f3460;-fx-border-width:0 0 0 2;");
+        sp.setPrefWidth(310);
         return sp;
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Game Loop
-    // ════════════════════════════════════════════════════════════════════
+    private void rebuildDirCombo(ComboBox<String> cb) {
+        cb.getItems().clear();
+        switch (currentMode) {
+            case FOUR_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông");
+            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","➡ Tây→Nam");
+            case FIVE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông","↗ Đông-Bắc");
+            case GRID -> cb.getItems().addAll("Ô lưới 1","Ô lưới 2","Ô lưới 3","Ô lưới 4","Ô lưới 5");
+        }
+        cb.setValue(cb.getItems().get(0));
+    }
 
+    private HBox buildStatusBar() {
+        HBox hb = new HBox(18);
+        hb.setPadding(new Insets(5,20,5,20));
+        hb.setAlignment(Pos.CENTER_LEFT);
+        hb.setStyle("-fx-background-color:#0f3460;");
+        lblTime = new Label("⏱ 0.0s");
+        lblTime.setTextFill(Color.web("#94a3b8"));
+        lblTime.setFont(Font.font("Segoe UI",12));
+        Label cr = new Label("Traffic Simulation v2.0 — JavaFX UI");
+        cr.setTextFill(Color.web("#475569"));
+        cr.setFont(Font.font("Segoe UI",11));
+        Region sp = new Region(); HBox.setHgrow(sp, Priority.ALWAYS);
+        hb.getChildren().addAll(lblTime, sp, cr);
+        return hb;
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Game Loop
+    // ══════════════════════════════════════════════════════════════
     private void startGameLoop() {
         gameLoop = new AnimationTimer() {
-            @Override
-            public void handle(long now) {
+            @Override public void handle(long now) {
                 if (lastNano == 0) { lastNano = now; return; }
-
                 double rawDelta = (now - lastNano) / 1_000_000_000.0;
                 lastNano = now;
                 double delta = Math.min(rawDelta, 0.05) * simSpeedMul;
 
-                // FPS
-                frameCount++;
-                fpsTimer += rawDelta;
+                frameCount++; fpsTimer += rawDelta;
                 if (fpsTimer >= 1.0) {
                     currentFPS = frameCount / fpsTimer;
-                    frameCount = 0;
-                    fpsTimer = 0;
+                    frameCount = 0; fpsTimer = 0;
                 }
 
                 if (engine.isRunning()) {
                     simTime += delta;
                     engine.update(delta);
-
-                    // Spawn logic
                     spawnTimer += delta;
-                    if (spawnTimer >= spawnInterval) {
-                        spawnTimer = 0;
-                        autoSpawn();
-                    }
-
-                    // Remove finished / crashed
+                    if (spawnTimer >= spawnInterval) { spawnTimer = 0; autoSpawn(); }
+                    // advance cooldown timers
+                    collisionCooldown.replaceAll((k,v) -> v - delta);
+                    collisionCooldown.entrySet().removeIf(e -> e.getValue() <= 0);
+                    checkCollisionsManually(); // our safer collision check
                     cleanupVehicles();
                 }
-
                 render();
                 updateUI();
             }
@@ -450,516 +422,547 @@ public class TrafficSimulationUI extends Application {
         gameLoop.start();
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Rendering
-    // ════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
+    //  Collision detection (replace the one in Vehicle/RULES)
+    //  We do it here to respect cooldown so spawning vehicles don't
+    //  immediately crash into each other.
+    // ══════════════════════════════════════════════════════════════
+    private void checkCollisionsManually() {
+        List<Vehicle> vehicles = new ArrayList<>(world.getVehicles());
+        for (int i = 0; i < vehicles.size(); i++) {
+            Vehicle a = vehicles.get(i);
+            if (a.isCrashed() || a.isFinished()) continue;
+            // skip if in cooldown
+            if (collisionCooldown.containsKey(a.getId())) continue;
 
+            for (int j = i+1; j < vehicles.size(); j++) {
+                Vehicle b = vehicles.get(j);
+                if (b.isCrashed() || b.isFinished()) continue;
+                if (collisionCooldown.containsKey(b.getId())) continue;
+
+                // Simple AABB-style distance check (good enough at our scale)
+                double dist = a.getPosition().distanceTo(b.getPosition());
+                double minDist = (a.getLength() + b.getLength()) * 0.38;
+                if (dist < minDist) {
+                    // Ambulance/Firetruck should NOT be destroyed by normal traffic
+                    // They push through — only flag the normal vehicle
+                    if (a.isPriorityVehicle() && !b.isPriorityVehicle()) {
+                        b.setCrashed();
+                        log("💥 Va chạm: " + b.getId() + " ← bị xe ưu tiên " + a.getId() + " đẩy");
+                    } else if (b.isPriorityVehicle() && !a.isPriorityVehicle()) {
+                        a.setCrashed();
+                        log("💥 Va chạm: " + a.getId() + " ← bị xe ưu tiên " + b.getId() + " đẩy");
+                    } else if (!a.isPriorityVehicle() && !b.isPriorityVehicle()) {
+                        a.setCrashed(); b.setCrashed();
+                        log("💥 Va chạm: " + a.getId() + " ↔ " + b.getId());
+                    }
+                    // two priority vehicles: neither crashes (they yield to each other)
+                }
+            }
+        }
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Rendering
+    // ══════════════════════════════════════════════════════════════
     private void render() {
         GraphicsContext g = canvas.getGraphicsContext2D();
+        g.setFill(Color.web("#1a2332")); g.fillRect(0,0,CANVAS_W,CANVAS_H);
 
-        // ── Background ─────────────────────────────────────────────────
-        g.setFill(Color.web("#1a2332"));
-        g.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        switch (currentMode) {
+            case FOUR_WAY  -> renderFourWay(g);
+            case THREE_WAY -> renderThreeWay(g);
+            case FIVE_WAY  -> renderFiveWay(g);
+            case GRID      -> renderGrid(g);
+        }
 
-        // ── Grass / Sidewalk blocks ────────────────────────────────────
-        g.setFill(Color.web("#1e3a2f"));
-        // 4 corner blocks
-        g.fillRect(0, 0, CX - ROAD_HALF, CY - ROAD_HALF);
-        g.fillRect(CX + ROAD_HALF, 0, CANVAS_W, CY - ROAD_HALF);
-        g.fillRect(0, CY + ROAD_HALF, CX - ROAD_HALF, CANVAS_H);
-        g.fillRect(CX + ROAD_HALF, CY + ROAD_HALF, CANVAS_W, CANVAS_H);
+        // Vehicles
+        for (Vehicle v : world.getVehicles()) drawVehicle(g, v.toRenderableState());
 
-        // ── Roads ──────────────────────────────────────────────────────
+        // Pause overlay
+        if (!engine.isRunning()) {
+            g.setFill(Color.web("#000",0.45));
+            g.fillRect(0,0,CANVAS_W,CANVAS_H);
+            g.setFill(Color.web("#f8fafc"));
+            g.setFont(Font.font("Segoe UI",FontWeight.BOLD,36));
+            g.fillText("⏸ TẠM DỪNG", CANVAS_W/2.0-110, CANVAS_H/2.0+12);
+        }
+    }
+
+    // ── Four-way intersection ──────────────────────────────────────
+    private void renderFourWay(GraphicsContext g) {
+        double cx = CANVAS_W/2.0, cy = CANVAS_H/2.0;
+        drawGrass(g);
+        // vertical + horizontal roads
+        fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, CANVAS_H);
+        fillRoad(g, 0, cy-ROAD_HALF, CANVAS_W, ROAD_HALF*2);
+        // intersection box
+        g.setFill(Color.web("#4b5563")); g.fillRect(cx-ROAD_HALF,cy-ROAD_HALF,ROAD_HALF*2,ROAD_HALF*2);
+        drawLaneCenter(g, cx, 0, cx, cy-ROAD_HALF);
+        drawLaneCenter(g, cx, cy+ROAD_HALF, cx, CANVAS_H);
+        drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
+        drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
+        drawRoadEdges4Way(g, cx, cy);
+        drawZebra4Way(g, cx, cy);
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor()); // N
+        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS.getColor()); // S
+        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW.getColor()); // E
+        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor()); // W
+    }
+
+    // ── Three-way (T-junction): roads from N, S, W — no East arm ──
+    private void renderThreeWay(GraphicsContext g) {
+        double cx = CANVAS_W/2.0, cy = CANVAS_H/2.0;
+        drawGrass(g);
+        // vertical road (N→S, but only N half + junction)
+        fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, cy+ROAD_HALF);
+        // horizontal road West arm only
+        fillRoad(g, 0, cy-ROAD_HALF, cx+ROAD_HALF, ROAD_HALF*2);
+        g.setFill(Color.web("#4b5563")); g.fillRect(cx-ROAD_HALF,cy-ROAD_HALF,ROAD_HALF*2,ROAD_HALF*2);
+        drawLaneCenter(g, cx, 0, cx, cy-ROAD_HALF);
+        drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
+        // Right-side cap (east dead end)
         g.setFill(Color.web("#374151"));
-        // Vertical road
-        g.fillRect(CX - ROAD_HALF, 0, ROAD_HALF * 2, CANVAS_H);
-        // Horizontal road
-        g.fillRect(0, CY - ROAD_HALF, CANVAS_W, ROAD_HALF * 2);
+        g.fillRect(cx+ROAD_HALF, cy-ROAD_HALF, 12, ROAD_HALF*2);
+        // lights
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor());
+        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor());
+        g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
+        g.fillText("T-JUNCTION", cx-40, CANVAS_H-18);
+    }
 
-        // ── Intersection box ───────────────────────────────────────────
+    // ── Five-way intersection ──────────────────────────────────────
+    private void renderFiveWay(GraphicsContext g) {
+        double cx = CANVAS_W/2.0, cy = CANVAS_H/2.0;
+        drawGrass(g);
+        // main 4 arms
+        fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, CANVAS_H);
+        fillRoad(g, 0, cy-ROAD_HALF, CANVAS_W, ROAD_HALF*2);
+        // 5th arm: diagonal NE
+        double armLen = 200;
+        g.save();
+        g.translate(cx+ROAD_HALF, cy-ROAD_HALF);
+        g.rotate(-45);
+        fillRoad(g, 0, -ROAD_HALF, armLen, ROAD_HALF*2);
+        g.restore();
         g.setFill(Color.web("#4b5563"));
-        g.fillRect(CX - ROAD_HALF, CY - ROAD_HALF, ROAD_HALF * 2, ROAD_HALF * 2);
-
-        // ── Lane markings ──────────────────────────────────────────────
-        drawLaneMarkings(g);
-
-        // ── Zebra crossings ────────────────────────────────────────────
-        drawZebraCrossings(g);
-
-        // ── Traffic lights ─────────────────────────────────────────────
-        drawTrafficLights(g);
-
-        // ── Vehicles ───────────────────────────────────────────────────
-        for (Vehicle v : world.getVehicles()) {
-            drawVehicle(g, v.toRenderableState());
-        }
-
-        // ── Overlay info ───────────────────────────────────────────────
-        drawOverlay(g);
+        g.fillOval(cx-ROAD_HALF*1.3, cy-ROAD_HALF*1.3, ROAD_HALF*2.6, ROAD_HALF*2.6);
+        drawLaneCenter(g, cx, 0, cx, cy-ROAD_HALF);
+        drawLaneCenter(g, cx, cy+ROAD_HALF, cx, CANVAS_H);
+        drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
+        drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor());
+        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS.getColor());
+        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW.getColor());
+        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor());
+        drawLight(g, cx+ROAD_HALF+50, cy-ROAD_HALF-80, lightNE.getColor());
+        g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
+        g.fillText("5-WAY INTERSECTION", cx-65, CANVAS_H-18);
     }
 
-    private void drawLaneMarkings(GraphicsContext g) {
-        g.setStroke(Color.web("#facc15", 0.7));
-        g.setLineWidth(2);
-        double dashOn = 20, dashOff = 15;
-
-        // Center line - vertical road
-        g.setLineDashes(dashOn, dashOff);
-        g.strokeLine(CX, 0, CX, CY - ROAD_HALF);
-        g.strokeLine(CX, CY + ROAD_HALF, CX, CANVAS_H);
-
-        // Center line - horizontal road
-        g.strokeLine(0, CY, CX - ROAD_HALF, CY);
-        g.strokeLine(CX + ROAD_HALF, CY, CANVAS_W, CY);
-        g.setLineDashes(null);
-
-        // Edge lines
-        g.setStroke(Color.web("#e2e8f0", 0.5));
-        g.setLineWidth(1.5);
-        // vertical road edges
-        g.strokeLine(CX - ROAD_HALF, 0, CX - ROAD_HALF, CY - ROAD_HALF);
-        g.strokeLine(CX + ROAD_HALF, 0, CX + ROAD_HALF, CY - ROAD_HALF);
-        g.strokeLine(CX - ROAD_HALF, CY + ROAD_HALF, CX - ROAD_HALF, CANVAS_H);
-        g.strokeLine(CX + ROAD_HALF, CY + ROAD_HALF, CX + ROAD_HALF, CANVAS_H);
-        // horizontal road edges
-        g.strokeLine(0, CY - ROAD_HALF, CX - ROAD_HALF, CY - ROAD_HALF);
-        g.strokeLine(0, CY + ROAD_HALF, CX - ROAD_HALF, CY + ROAD_HALF);
-        g.strokeLine(CX + ROAD_HALF, CY - ROAD_HALF, CANVAS_W, CY - ROAD_HALF);
-        g.strokeLine(CX + ROAD_HALF, CY + ROAD_HALF, CANVAS_W, CY + ROAD_HALF);
+    // ── Grid network (2×2 blocks = 3×3 intersections) ─────────────
+    private void renderGrid(GraphicsContext g) {
+        drawGrassGrid(g);
+        double gapX = CANVAS_W / 3.0;
+        double gapY = CANVAS_H / 3.0;
+        // 3 vertical roads
+        for (int col = 0; col < 3; col++) {
+            double x = gapX * (col+1);
+            fillRoad(g, x-ROAD_HALF*0.7, 0, ROAD_HALF*1.4, CANVAS_H);
+        }
+        // 3 horizontal roads
+        for (int row = 0; row < 3; row++) {
+            double y = gapY * (row+1);
+            fillRoad(g, 0, y-ROAD_HALF*0.7, CANVAS_W, ROAD_HALF*1.4);
+        }
+        // intersection boxes
+        for (int col = 0; col < 3; col++) {
+            for (int row = 0; row < 3; row++) {
+                double x = gapX*(col+1), y = gapY*(row+1);
+                g.setFill(Color.web("#4b5563"));
+                g.fillRect(x-ROAD_HALF*0.7, y-ROAD_HALF*0.7, ROAD_HALF*1.4, ROAD_HALF*1.4);
+                // traffic lights at each intersection (alternate)
+                SimpleTrafficLight lt = ((col+row)%2==0) ? lightNS : lightEW;
+                drawLight(g, x+ROAD_HALF*0.7+2, y-ROAD_HALF*0.7-28, lt.getColor());
+            }
+        }
+        // lane centers
+        for (int col = 0; col < 3; col++) {
+            double x = gapX*(col+1);
+            drawLaneCenter(g, x, 0, x, CANVAS_H);
+        }
+        for (int row = 0; row < 3; row++) {
+            double y = gapY*(row+1);
+            drawLaneCenter(g, 0, y, CANVAS_W, y);
+        }
+        g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
+        g.fillText("ROAD NETWORK (3×3 Grid)", 12, CANVAS_H-18);
     }
 
-    private void drawZebraCrossings(GraphicsContext g) {
-        g.setFill(Color.web("#e2e8f0", 0.3));
-        int stripes = 5;
-        double sw = ROAD_HALF * 2 / stripes;
-
-        // Top crossing
-        double ty = CY - ROAD_HALF - 18;
-        for (int i = 0; i < stripes; i++) {
-            g.fillRect(CX - ROAD_HALF + i * sw + 1, ty, sw - 2, 14);
-        }
-        // Bottom crossing
-        double by = CY + ROAD_HALF + 4;
-        for (int i = 0; i < stripes; i++) {
-            g.fillRect(CX - ROAD_HALF + i * sw + 1, by, sw - 2, 14);
-        }
-        // Left crossing
-        double lx = CX - ROAD_HALF - 18;
-        for (int i = 0; i < stripes; i++) {
-            g.fillRect(lx, CY - ROAD_HALF + i * sw + 1, 14, sw - 2);
-        }
-        // Right crossing
-        double rx = CX + ROAD_HALF + 4;
-        for (int i = 0; i < stripes; i++) {
-            g.fillRect(rx, CY - ROAD_HALF + i * sw + 1, 14, sw - 2);
-        }
+    // ── Drawing helpers ────────────────────────────────────────────
+    private void drawGrass(GraphicsContext g) {
+        g.setFill(Color.web("#1e3a2f"));
+        double cx=CANVAS_W/2.0, cy=CANVAS_H/2.0;
+        g.fillRect(0,0,cx-ROAD_HALF,cy-ROAD_HALF);
+        g.fillRect(cx+ROAD_HALF,0,CANVAS_W,cy-ROAD_HALF);
+        g.fillRect(0,cy+ROAD_HALF,cx-ROAD_HALF,CANVAS_H);
+        g.fillRect(cx+ROAD_HALF,cy+ROAD_HALF,CANVAS_W,CANVAS_H);
     }
 
-    private void drawTrafficLights(GraphicsContext g) {
-        LightColor nsColor = lightNS.getColor();
-        LightColor ewColor = lightEW.getColor();
+    private void drawGrassGrid(GraphicsContext g) {
+        g.setFill(Color.web("#1e3a2f")); g.fillRect(0,0,CANVAS_W,CANVAS_H);
+    }
 
-        // North light (right side of road going down)
-        drawLight(g, CX + ROAD_HALF + 6, CY - ROAD_HALF - 32, nsColor);
-        // South light
-        drawLight(g, CX - ROAD_HALF - 22, CY + ROAD_HALF + 6, nsColor);
-        // East light
-        drawLight(g, CX + ROAD_HALF + 6, CY + 8, ewColor);
-        // West light
-        drawLight(g, CX - ROAD_HALF - 22, CY - ROAD_HALF - 32, ewColor);
+    private void fillRoad(GraphicsContext g, double x, double y, double w, double h) {
+        g.setFill(Color.web("#374151")); g.fillRect(x,y,w,h);
+    }
+
+    private void drawLaneCenter(GraphicsContext g, double x1, double y1, double x2, double y2) {
+        g.setStroke(Color.web("#facc15",0.6)); g.setLineWidth(1.5);
+        g.setLineDashes(18,12); g.strokeLine(x1,y1,x2,y2); g.setLineDashes(null);
+    }
+
+    private void drawRoadEdges4Way(GraphicsContext g, double cx, double cy) {
+        g.setStroke(Color.web("#e2e8f0",0.4)); g.setLineWidth(1.2);
+        g.strokeLine(cx-ROAD_HALF,0,cx-ROAD_HALF,cy-ROAD_HALF);
+        g.strokeLine(cx+ROAD_HALF,0,cx+ROAD_HALF,cy-ROAD_HALF);
+        g.strokeLine(cx-ROAD_HALF,cy+ROAD_HALF,cx-ROAD_HALF,CANVAS_H);
+        g.strokeLine(cx+ROAD_HALF,cy+ROAD_HALF,cx+ROAD_HALF,CANVAS_H);
+        g.strokeLine(0,cy-ROAD_HALF,cx-ROAD_HALF,cy-ROAD_HALF);
+        g.strokeLine(0,cy+ROAD_HALF,cx-ROAD_HALF,cy+ROAD_HALF);
+        g.strokeLine(cx+ROAD_HALF,cy-ROAD_HALF,CANVAS_W,cy-ROAD_HALF);
+        g.strokeLine(cx+ROAD_HALF,cy+ROAD_HALF,CANVAS_W,cy+ROAD_HALF);
+    }
+
+    private void drawZebra4Way(GraphicsContext g, double cx, double cy) {
+        g.setFill(Color.web("#e2e8f0",0.25));
+        int n = 5; double sw = ROAD_HALF*2/n;
+        for (int i=0;i<n;i++) {
+            g.fillRect(cx-ROAD_HALF+i*sw+1, cy-ROAD_HALF-16, sw-2, 13);
+            g.fillRect(cx-ROAD_HALF+i*sw+1, cy+ROAD_HALF+3,  sw-2, 13);
+            g.fillRect(cx-ROAD_HALF-16, cy-ROAD_HALF+i*sw+1, 13, sw-2);
+            g.fillRect(cx+ROAD_HALF+3,  cy-ROAD_HALF+i*sw+1, 13, sw-2);
+        }
     }
 
     private void drawLight(GraphicsContext g, double x, double y, LightColor color) {
-        // Housing
-        g.setFill(Color.web("#1f2937"));
-        g.fillRoundRect(x, y, 16, 44, 4, 4);
-
-        // Red
-        boolean redOn = (color == LightColor.RED);
-        g.setFill(redOn ? Color.web("#ef4444") : Color.web("#7f1d1d"));
-        if (redOn) { g.setEffect(new javafx.scene.effect.Glow(0.8)); }
-        g.fillOval(x + 2, y + 2, 12, 12);
-        g.setEffect(null);
-
-        // Yellow
-        boolean yelOn = (color == LightColor.YELLOW);
-        g.setFill(yelOn ? Color.web("#fbbf24") : Color.web("#78350f"));
-        if (yelOn) { g.setEffect(new javafx.scene.effect.Glow(0.8)); }
-        g.fillOval(x + 2, y + 16, 12, 12);
-        g.setEffect(null);
-
-        // Green
-        boolean grnOn = (color == LightColor.GREEN);
-        g.setFill(grnOn ? Color.web("#34d399") : Color.web("#064e3b"));
-        if (grnOn) { g.setEffect(new javafx.scene.effect.Glow(0.8)); }
-        g.fillOval(x + 2, y + 30, 12, 12);
-        g.setEffect(null);
+        g.setFill(Color.web("#1f2937")); g.fillRoundRect(x,y,15,42,4,4);
+        boolean r = color==LightColor.RED, yl = color==LightColor.YELLOW, gr = color==LightColor.GREEN;
+        Glow glow = new Glow(0.9);
+        g.setFill(r ? Color.web("#ef4444") : Color.web("#7f1d1d"));
+        if (r) g.setEffect(glow); g.fillOval(x+2,y+2,11,11); g.setEffect(null);
+        g.setFill(yl ? Color.web("#fbbf24") : Color.web("#78350f"));
+        if (yl) g.setEffect(glow); g.fillOval(x+2,y+15,11,11); g.setEffect(null);
+        g.setFill(gr ? Color.web("#34d399") : Color.web("#064e3b"));
+        if (gr) g.setEffect(glow); g.fillOval(x+2,y+28,11,11); g.setEffect(null);
     }
 
-    private void drawVehicle(GraphicsContext g, core.vehicle.RenderableState state) {
-        double x  = state.getPosition().x;
-        double y  = state.getPosition().y;
-        double rot = state.getRotation();
-        double len = state.getLength();
-        double wid = state.getWidth();
-
+    private void drawVehicle(GraphicsContext g, core.vehicle.RenderableState s) {
+        double x=s.getPosition().x, y=s.getPosition().y;
         g.save();
-        g.translate(x, y);
-        g.rotate(Math.toDegrees(rot));
+        g.translate(x,y);
+        g.rotate(Math.toDegrees(s.getRotation()));
 
-        // Crashed = grayscale + shake
-        if (state.isCrashed()) {
-            g.setFill(Color.web("#6b7280"));
-            g.fillRoundRect(-len / 2, -wid / 2, len, wid, 4, 4);
-            g.setFill(Color.RED);
-            g.setFont(Font.font(10));
-            g.fillText("💥", -6, 4);
-            g.restore();
-            return;
+        if (s.isCrashed()) {
+            g.setFill(Color.web("#374151")); g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),4,4);
+            g.setFill(Color.web("#ef4444")); g.setFont(Font.font(10)); g.fillText("✕",-4,4);
+            g.restore(); return;
         }
 
-        // Siren flash background
-        if (state.isPriority() && state.isSirenFlash()) {
-            g.setFill(Color.web("#fef3c7", 0.3));
-            g.fillOval(-len, -len, len * 2, len * 2);
+        // Siren glow
+        if (s.isPriority() && s.isSirenFlash()) {
+            g.setFill(Color.web("#fef3c7",0.25)); g.fillOval(-s.getLength(),-s.getLength(),s.getLength()*2,s.getLength()*2);
         }
 
-        // Body
-        java.awt.Color ac = state.getBodyColor();
-        Color body = Color.rgb(ac.getRed(), ac.getGreen(), ac.getBlue());
-        g.setFill(body);
-        g.fillRoundRect(-len / 2, -wid / 2, len, wid, 6, 6);
+        java.awt.Color ac = s.getBodyColor();
+        g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
+        g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
 
-        // Roof
-        java.awt.Color rc = state.getRoofColor();
-        Color roof = Color.rgb(rc.getRed(), rc.getGreen(), rc.getBlue());
-        g.setFill(roof);
-        double roofLen = len * 0.5;
-        double roofWid = wid * 0.7;
-        g.fillRoundRect(-roofLen / 2, -roofWid / 2, roofLen, roofWid, 3, 3);
+        java.awt.Color rc = s.getRoofColor();
+        g.setFill(Color.rgb(rc.getRed(),rc.getGreen(),rc.getBlue()));
+        g.fillRoundRect(-s.getLength()*0.26,-s.getWidth()*0.36,s.getLength()*0.52,s.getWidth()*0.72,3,3);
 
         // Headlights
-        g.setFill(Color.web("#fef9c3", 0.9));
-        g.fillOval(len / 2 - 5, -wid / 2, 5, 4);
-        g.fillOval(len / 2 - 5, wid / 2 - 4, 5, 4);
+        g.setFill(Color.web("#fef9c3",0.9));
+        g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
+        g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
 
-        // Yielding indicator
-        if (state.isYielding()) {
-            g.setStroke(Color.ORANGE);
-            g.setLineWidth(2);
-            g.strokeRoundRect(-len / 2 - 2, -wid / 2 - 2, len + 4, wid + 4, 6, 6);
-        }
+        if (s.isYielding()) { g.setStroke(Color.ORANGE); g.setLineWidth(2);
+            g.strokeRoundRect(-s.getLength()/2-2,-s.getWidth()/2-2,s.getLength()+4,s.getWidth()+4,5,5); }
+        if (s.isStopped() && !s.isYielding()) {
+            g.setFill(Color.web("#ef4444",0.8)); g.fillRect(-s.getLength()/2-5,-2,4,4); }
+        if (s.isPriority()) {
+            g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
+            g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }
 
-        // Stopped indicator
-        if (state.isStopped() && !state.isYielding()) {
-            g.setFill(Color.web("#ef4444", 0.7));
-            g.fillRect(-len / 2 - 4, -2, 4, 4);
-        }
-
-        // Priority siren
-        if (state.isPriority()) {
-            Color sc = state.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6");
-            g.setFill(sc);
-            g.fillRect(-len / 2 + 2, -wid / 2 - 5, 8, 5);
-        }
-
-        // Label
-        g.setFill(Color.WHITE);
-        g.setFont(Font.font("Segoe UI", FontWeight.BOLD, 8));
-        g.fillText(state.getBasicLabel(), -len / 4, 3);
-
+        g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
+        g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
         g.restore();
     }
 
-    private void drawOverlay(GraphicsContext g) {
-        // Paused overlay
-        if (!engine.isRunning()) {
-            g.setFill(Color.web("#000000", 0.45));
-            g.fillRect(0, 0, CANVAS_W, CANVAS_H);
-            g.setFill(Color.web("#f8fafc"));
-            g.setFont(Font.font("Segoe UI", FontWeight.BOLD, 36));
-            g.fillText("⏸ TẠM DỪNG", CX - 110, CY + 12);
-        }
-    }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  UI Updates
-    // ════════════════════════════════════════════════════════════════════
-
+    // ══════════════════════════════════════════════════════════════
+    //  UI updates
+    // ══════════════════════════════════════════════════════════════
     private void updateUI() {
         lblFPS.setText(String.format("FPS: %.0f", currentFPS));
-        lblTime.setText(String.format("⏱ Thời gian: %.1fs", simTime));
-        lblVehicleCount.setText(String.valueOf(totalSpawned.get()));
+        lblTime.setText(String.format("⏱ %.1fs", simTime));
+        statSpawned.setText(String.valueOf(totalSpawned.get()));
         statFinished.setText(String.valueOf(totalFinished.get()));
         statCrashed.setText(String.valueOf(totalCrashed.get()));
-
-        // Light indicators
-        updateLightLabel(lblLightNorth, lightNS.getColor());
-        updateLightLabel(lblLightSouth, lightNS.getColor());
-        updateLightLabel(lblLightEast,  lightEW.getColor());
-        updateLightLabel(lblLightWest,  lightEW.getColor());
+        rebuildLightStatus();
     }
 
-    private void updateLightLabel(Label lbl, LightColor color) {
-        switch (color) {
-            case RED    -> { lbl.setText("● ĐỎ");   lbl.setTextFill(Color.web("#ef4444")); }
-            case YELLOW -> { lbl.setText("● VÀNG"); lbl.setTextFill(Color.web("#fbbf24")); }
-            case GREEN  -> { lbl.setText("● XANH"); lbl.setTextFill(Color.web("#34d399")); }
+    private void rebuildLightStatus() {
+        lightStatusBox.getChildren().clear();
+        switch (currentMode) {
+            case FOUR_WAY -> {
+                lightStatusBox.getChildren().addAll(
+                    lightRow("⬆⬇ Bắc–Nam:", lightNS.getColor()),
+                    lightRow("⬅➡ Đông–Tây:", lightEW.getColor()));
+            }
+            case THREE_WAY -> {
+                lightStatusBox.getChildren().addAll(
+                    lightRow("⬇ Bắc–Nam:", lightNS.getColor()),
+                    lightRow("➡ Tây–Đông:", lightEW.getColor()));
+            }
+            case FIVE_WAY -> {
+                lightStatusBox.getChildren().addAll(
+                    lightRow("⬆⬇ Bắc–Nam:", lightNS.getColor()),
+                    lightRow("⬅➡ Đông–Tây:", lightEW.getColor()),
+                    lightRow("↗ Đông-Bắc:", lightNE.getColor()));
+            }
+            case GRID -> {
+                lightStatusBox.getChildren().addAll(
+                    lightRow("Nhóm A (chẵn):", lightNS.getColor()),
+                    lightRow("Nhóm B (lẻ):", lightEW.getColor()));
+            }
         }
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Vehicle Spawning
-    // ════════════════════════════════════════════════════════════════════
+    private HBox lightRow(String label, LightColor color) {
+        Label k = new Label(label); k.setTextFill(Color.web("#94a3b8")); k.setFont(Font.font("Segoe UI",12)); k.setMinWidth(115);
+        Label v = new Label(); v.setFont(Font.font("Segoe UI",FontWeight.BOLD,12));
+        switch (color) {
+            case RED    -> { v.setText("● ĐỎ");   v.setTextFill(Color.web("#ef4444")); }
+            case YELLOW -> { v.setText("● VÀNG"); v.setTextFill(Color.web("#fbbf24")); }
+            case GREEN  -> { v.setText("● XANH"); v.setTextFill(Color.web("#34d399")); }
+        }
+        HBox hb = new HBox(6,k,v); hb.setAlignment(Pos.CENTER_LEFT); return hb;
+    }
 
+    // ══════════════════════════════════════════════════════════════
+    //  Spawning
+    // ══════════════════════════════════════════════════════════════
     private void autoSpawn() {
-        String type = VEHICLE_TYPES[spawnRoundRobin % VEHICLE_TYPES.length];
-        spawnRoundRobin++;
-        VehiclePath path = getPathByDirection(spawnDirectionRR % 4);
-        spawnDirectionRR++;
-        spawnVehicle(type, path);
+        String type = AUTO_TYPES[spawnRR++ % AUTO_TYPES.length];
+        VehiclePath path = getPathByModeAndDir(dirRR++ % dirCountForMode());
+        doSpawn(type, path, null);
     }
 
-    private void spawnVehicle(String type, VehiclePath path) {
-        spawnVehicleWithBehavior(type, path, null);
+    private int dirCountForMode() {
+        return switch (currentMode) { case THREE_WAY -> 3; case FIVE_WAY -> 5; default -> 4; };
     }
 
-    private void spawnVehicleWithBehavior(String type, VehiclePath path, core.driver.DriverBehavior beh) {
+    private void spawnAt(String type, VehiclePath path, double extraCooldown) {
+        doSpawn(type, path, null);
+    }
+
+    private void doSpawn(String type, VehiclePath path, core.driver.DriverBehavior beh) {
         try {
-            Vehicle v;
-            if (beh == null) {
-                v = VehicleFactory.create(type, path);
-            } else {
-                v = VehicleFactory.create(type, path, beh);
-            }
+            Vehicle v = beh == null ? VehicleFactory.create(type, path)
+                                    : VehicleFactory.create(type, path, beh);
             world.addVehicle(v);
+            // Give every newly spawned vehicle a cooldown so it can't immediately crash
+            collisionCooldown.put(v.getId(), COLLISION_COOLDOWN);
             totalSpawned.incrementAndGet();
-            log("🚗 Tạo xe: " + type + " [" + v.getId() + "] " + path.getEntryArm() + "→" + path.getExitArm());
+            log("🚗 " + type + " [" + v.getId() + "] " + path.getEntryArm() + "→" + path.getExitArm());
         } catch (Exception ex) {
-            log("⚠ Lỗi tạo xe: " + ex.getMessage());
+            log("⚠ Lỗi: " + ex.getMessage());
         }
     }
 
     private void cleanupVehicles() {
-        List<Vehicle> toRemove = new ArrayList<>();
+        List<Vehicle> rm = new ArrayList<>();
         for (Vehicle v : world.getVehicles()) {
-            if (v.isFinished()) {
-                toRemove.add(v);
-                totalFinished.incrementAndGet();
-            } else if (v.isCrashed()) {
-                toRemove.add(v);
-                totalCrashed.incrementAndGet();
-                log("💥 Va chạm: " + v.getId());
-            }
+            if (v.isFinished()) { rm.add(v); totalFinished.incrementAndGet(); }
+            else if (v.isCrashed()) { rm.add(v); totalCrashed.incrementAndGet(); }
         }
-        for (Vehicle v : toRemove) world.removeVehicle(v);
+        rm.forEach(world::removeVehicle);
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Paths — 4 hướng qua giao lộ
-    // ════════════════════════════════════════════════════════════════════
+    // ══════════════════════════════════════════════════════════════
+    //  Path factories
+    // ══════════════════════════════════════════════════════════════
+    private double cx() { return CANVAS_W/2.0; }
+    private double cy() { return CANVAS_H/2.0; }
 
-    private VehiclePath makeNorthSouthPath() {
-        double laneOffset = LANE_W / 2.0;
-        List<Vector2D> wps = List.of(
-            new Vector2D(CX + laneOffset, -20),
-            new Vector2D(CX + laneOffset, CY - ROAD_HALF - 20),  // stop line
-            new Vector2D(CX + laneOffset, CY),
-            new Vector2D(CX + laneOffset, CANVAS_H + 20)
-        );
-        return new VehiclePath("ns", wps, 1, "light-NS", "N", "S");
+    // ── 4-way ─────────────────────────────────────────────────────
+    private VehiclePath makeNorthSouthPath(int lane) {
+        double x = cx() + LANE_W/2.0 + lane*LANE_W;
+        return new VehiclePath("ns"+lane, List.of(
+            new Vector2D(x,-20), new Vector2D(x, cy()-ROAD_HALF-10),
+            new Vector2D(x, cy()), new Vector2D(x, CANVAS_H+20)), 1,"light-NS","N","S");
+    }
+    private VehiclePath makeSouthNorthPath(int lane) {
+        double x = cx() - LANE_W/2.0 - lane*LANE_W;
+        return new VehiclePath("sn"+lane, List.of(
+            new Vector2D(x,CANVAS_H+20), new Vector2D(x, cy()+ROAD_HALF+10),
+            new Vector2D(x, cy()), new Vector2D(x,-20)), 1,"light-NS","S","N");
+    }
+    private VehiclePath makeEastWestPath(int lane) {
+        double y = cy() + LANE_W/2.0 + lane*LANE_W;
+        return new VehiclePath("ew"+lane, List.of(
+            new Vector2D(CANVAS_W+20,y), new Vector2D(cx()+ROAD_HALF+10,y),
+            new Vector2D(cx(),y), new Vector2D(-20,y)), 1,"light-EW","E","W");
+    }
+    private VehiclePath makeWestEastPath(int lane) {
+        double y = cy() - LANE_W/2.0 - lane*LANE_W;
+        return new VehiclePath("we"+lane, List.of(
+            new Vector2D(-20,y), new Vector2D(cx()-ROAD_HALF-10,y),
+            new Vector2D(cx(),y), new Vector2D(CANVAS_W+20,y)), 1,"light-EW","W","E");
     }
 
-    private VehiclePath makeSouthNorthPath() {
-        double laneOffset = LANE_W / 2.0;
-        List<Vector2D> wps = List.of(
-            new Vector2D(CX - laneOffset, CANVAS_H + 20),
-            new Vector2D(CX - laneOffset, CY + ROAD_HALF + 20),  // stop line
-            new Vector2D(CX - laneOffset, CY),
-            new Vector2D(CX - laneOffset, -20)
-        );
-        return new VehiclePath("sn", wps, 1, "light-NS", "S", "N");
-    }
-
-    private VehiclePath makeEastWestPath() {
-        double laneOffset = LANE_W / 2.0;
-        List<Vector2D> wps = List.of(
-            new Vector2D(CANVAS_W + 20, CY + laneOffset),
-            new Vector2D(CX + ROAD_HALF + 20, CY + laneOffset),  // stop line
-            new Vector2D(CX, CY + laneOffset),
-            new Vector2D(-20, CY + laneOffset)
-        );
-        return new VehiclePath("ew", wps, 1, "light-EW", "E", "W");
-    }
-
-    private VehiclePath makeWestEastPath() {
-        double laneOffset = LANE_W / 2.0;
-        List<Vector2D> wps = List.of(
-            new Vector2D(-20, CY - laneOffset),
-            new Vector2D(CX - ROAD_HALF - 20, CY - laneOffset),  // stop line
-            new Vector2D(CX, CY - laneOffset),
-            new Vector2D(CANVAS_W + 20, CY - laneOffset)
-        );
-        return new VehiclePath("we", wps, 1, "light-EW", "W", "E");
-    }
-
-    private VehiclePath getPathByDirection(int idx) {
-        return switch (idx % 4) {
-            case 0 -> makeNorthSouthPath();
-            case 1 -> makeSouthNorthPath();
-            case 2 -> makeEastWestPath();
-            default -> makeWestEastPath();
+    // ── 3-way ─────────────────────────────────────────────────────
+    private VehiclePath makeThreeWayPath(int idx) {
+        double cx=cx(), cy=cy(), lw=LANE_W/2.0;
+        return switch(idx) {
+            case 0 -> new VehiclePath("3w-ns", List.of(
+                new Vector2D(cx+lw,-20), new Vector2D(cx+lw,cy-ROAD_HALF-10),
+                new Vector2D(cx+lw,cy+ROAD_HALF-10), new Vector2D(cx+lw,cy+ROAD_HALF+40)), 1,"light-NS","N","S");
+            default -> new VehiclePath("3w-wn", List.of(
+                new Vector2D(-20,cy-lw), new Vector2D(cx-ROAD_HALF-10,cy-lw),
+                new Vector2D(cx,cy-lw), new Vector2D(cx,cy-ROAD_HALF-20),
+                new Vector2D(cx,-20)), 1,"light-EW","W","N");
         };
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Controls
-    // ════════════════════════════════════════════════════════════════════
+    // ── 5-way ─────────────────────────────────────────────────────
+    private VehiclePath makeFiveWayPath(int idx) {
+        double cx=cx(), cy=cy(), lw=LANE_W/2.0;
+        return switch(idx%5) {
+            case 0 -> makeNorthSouthPath(0);
+            case 1 -> makeSouthNorthPath(0);
+            case 2 -> makeEastWestPath(0);
+            case 3 -> makeWestEastPath(0);
+            default -> new VehiclePath("ne-diag", List.of(
+                new Vector2D(CANVAS_W+20,-20), new Vector2D(cx+ROAD_HALF+60,cy-ROAD_HALF-60),
+                new Vector2D(cx+ROAD_HALF,cy-ROAD_HALF),
+                new Vector2D(cx,cy), new Vector2D(-20,cy+lw)), 1,"light-NE","NE","SW");
+        };
+    }
 
+    // ── Grid paths ────────────────────────────────────────────────
+    private VehiclePath makeGridPath(int idx) {
+        double gx = CANVAS_W/3.0, gy = CANVAS_H/3.0;
+        return switch(idx%5) {
+            // vertical downward through col 1
+            case 0 -> new VehiclePath("grid-v1", List.of(
+                new Vector2D(gx,-20), new Vector2D(gx,gy-16),
+                new Vector2D(gx,gy+16), new Vector2D(gx,gy*2-16),
+                new Vector2D(gx,gy*2+16), new Vector2D(gx,CANVAS_H+20)), 1,"light-NS","N1","S1");
+            // vertical downward through col 2
+            case 1 -> new VehiclePath("grid-v2", List.of(
+                new Vector2D(gx*2,-20), new Vector2D(gx*2,gy*2-16),
+                new Vector2D(gx*2,gy*2+16), new Vector2D(gx*2,CANVAS_H+20)), 1,"light-EW","N2","S2");
+            // vertical downward col 3
+            case 2 -> new VehiclePath("grid-v3", List.of(
+                new Vector2D(gx*3,-20), new Vector2D(gx*3,gy-16),
+                new Vector2D(gx*3,gy+16), new Vector2D(gx*3,CANVAS_H+20)), 1,"light-NS","N3","S3");
+            // horizontal right row 1
+            case 3 -> new VehiclePath("grid-h1", List.of(
+                new Vector2D(-20,gy), new Vector2D(gx-16,gy),
+                new Vector2D(gx+16,gy), new Vector2D(gx*2-16,gy),
+                new Vector2D(gx*2+16,gy), new Vector2D(CANVAS_W+20,gy)), 1,"light-EW","W1","E1");
+            // horizontal right row 2
+            default -> new VehiclePath("grid-h2", List.of(
+                new Vector2D(-20,gy*2), new Vector2D(gx-16,gy*2),
+                new Vector2D(gx*2+16,gy*2), new Vector2D(CANVAS_W+20,gy*2)), 1,"light-NS","W2","E2");
+        };
+    }
+
+    private VehiclePath getPathByModeAndDir(int idx) {
+        return switch (currentMode) {
+            case FOUR_WAY -> switch(idx%4) {
+                case 0->makeNorthSouthPath(0); case 1->makeSouthNorthPath(0);
+                case 2->makeEastWestPath(0); default->makeWestEastPath(0);};
+            case THREE_WAY -> makeThreeWayPath(idx%3);
+            case FIVE_WAY  -> makeFiveWayPath(idx%5);
+            case GRID      -> makeGridPath(idx%5);
+        };
+    }
+
+    // ══════════════════════════════════════════════════════════════
+    //  Controls
+    // ══════════════════════════════════════════════════════════════
     private void togglePause() {
-        if (engine.isRunning()) {
-            engine.pause();
-            btnStartPause.setText("▶ Tiếp tục");
-            log("⏸ Đã tạm dừng.");
-        } else {
-            engine.resume();
-            lastNano = 0;
-            btnStartPause.setText("⏸ Tạm dừng");
-            log("▶ Tiếp tục chạy.");
-        }
+        if (engine.isRunning()) { engine.pause(); btnStartPause.setText("▶ Tiếp tục"); log("⏸ Tạm dừng."); }
+        else { engine.resume(); lastNano=0; btnStartPause.setText("⏸ Tạm dừng"); log("▶ Tiếp tục."); }
     }
 
     private void resetSimulation() {
-        engine.pause();
+        if (engine!=null) engine.pause();
+        simTime=0; spawnTimer=0; spawnRR=0; dirRR=0;
+        totalSpawned.set(0); totalFinished.set(0); totalCrashed.set(0);
         initWorld();
-        simTime = 0;
-        spawnTimer = 0;
-        totalSpawned.set(0);
-        totalFinished.set(0);
-        totalCrashed.set(0);
-        spawnRoundRobin = 0;
-        spawnDirectionRR = 0;
         engine = new SimulationEngine(world);
-        engine.start();
-        lastNano = 0;
-        btnStartPause.setText("⏸ Tạm dừng");
-        log("🔄 Đã đặt lại mô phỏng.");
+        engine.start(); lastNano=0;
+        if (btnStartPause!=null) btnStartPause.setText("⏸ Tạm dừng");
+        log("🔄 Đặt lại — chế độ: " + modeName(currentMode));
     }
-
-    // ════════════════════════════════════════════════════════════════════
-    //  Logging
-    // ════════════════════════════════════════════════════════════════════
 
     private void log(String msg) {
         String line = String.format("[%.1fs] %s%n", simTime, msg);
-        Platform.runLater(() -> {
-            logArea.appendText(line);
-            logArea.setScrollTop(Double.MAX_VALUE);
-        });
+        Platform.runLater(() -> { if(logArea!=null){logArea.appendText(line); logArea.setScrollTop(Double.MAX_VALUE);}});
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  UI Helpers
-    // ════════════════════════════════════════════════════════════════════
-
-    private Label sectionLabel(String text) {
-        Label l = new Label(text);
-        l.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
-        l.setTextFill(Color.web("#e2e8f0"));
-        return l;
-    }
-
-    private Label styledLabel(String text, String color) {
-        Label l = new Label(text);
-        l.setTextFill(Color.web(color));
-        l.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
-        return l;
-    }
-
-    private Label createStatRow(String text) {
-        Label l = new Label(text);
-        l.setTextFill(Color.web("#64ffda"));
-        l.setFont(Font.font("Segoe UI", FontWeight.BOLD, 13));
-        return l;
-    }
-
-    private Label lightIndicator(String text) {
-        Label l = new Label(text);
-        l.setFont(Font.font("Segoe UI", FontWeight.BOLD, 12));
-        return l;
-    }
-
-    private Label labelSmall(String text) {
-        Label l = new Label(text);
-        l.setTextFill(Color.web("#94a3b8"));
-        l.setFont(Font.font("Segoe UI", 11));
-        return l;
-    }
-
-    private void styleButton(Button btn, String hex) {
-        btn.setStyle(
-            "-fx-background-color: " + hex + ";" +
-            "-fx-text-fill: white;" +
-            "-fx-font-weight: bold;" +
-            "-fx-font-size: 12;" +
-            "-fx-cursor: hand;" +
-            "-fx-background-radius: 6;"
-        );
-        btn.setOnMouseEntered(e -> btn.setOpacity(0.85));
-        btn.setOnMouseExited(e -> btn.setOpacity(1.0));
-    }
-
+    // ══════════════════════════════════════════════════════════════
+    //  Style helpers
+    // ══════════════════════════════════════════════════════════════
+    private Label sectionLbl(String t) {
+        Label l=new Label(t); l.setFont(Font.font("Segoe UI",FontWeight.BOLD,13)); l.setTextFill(Color.web("#e2e8f0")); return l;}
+    private Label valueLbl(String t) {
+        Label l=new Label(t); l.setFont(Font.font("Segoe UI",FontWeight.BOLD,12)); l.setTextFill(Color.web("#64ffda")); return l;}
+    private Label smallLbl(String t) {
+        Label l=new Label(t); l.setFont(Font.font("Segoe UI",11)); l.setTextFill(Color.web("#94a3b8")); return l;}
+    private HBox statRow(String k, Label v) {
+        Label kl=new Label(k); kl.setFont(Font.font("Segoe UI",12)); kl.setTextFill(Color.web("#94a3b8")); kl.setMinWidth(120);
+        HBox h=new HBox(6,kl,v); h.setAlignment(Pos.CENTER_LEFT); return h;}
+    private Separator separator() { Separator s=new Separator(); s.setStyle("-fx-background-color:#334155;"); return s;}
+    private void styleBtn(Button b, String hex) {
+        b.setStyle("-fx-background-color:"+hex+";-fx-text-fill:white;-fx-font-weight:bold;-fx-font-size:12;" +
+                   "-fx-cursor:hand;-fx-background-radius:6;");
+        b.setOnMouseEntered(e->b.setOpacity(0.82)); b.setOnMouseExited(e->b.setOpacity(1.0));}
     private void styleCombo(ComboBox<String> cb) {
         cb.setMaxWidth(Double.MAX_VALUE);
-        cb.setStyle(
-            "-fx-background-color: #1e3a5f;" +
-            "-fx-text-fill: #e2e8f0;" +
-            "-fx-font-size: 12;" +
-            "-fx-background-radius: 4;"
-        );
-    }
+        cb.setStyle("-fx-background-color:#1e3a5f;-fx-text-fill:#e2e8f0;-fx-font-size:12;-fx-background-radius:4;");}
+    private void styleSlider(Slider s) {
+        s.setShowTickMarks(true); s.setMajorTickUnit(1); s.setStyle("-fx-control-inner-background:#1e3a5f;");}
+    private String toggleStyle(boolean sel) {
+        return sel ? "-fx-background-color:#3b82f6;-fx-text-fill:white;-fx-font-weight:bold;-fx-font-size:11;-fx-background-radius:5;-fx-cursor:hand;"
+                   : "-fx-background-color:#1e3a5f;-fx-text-fill:#94a3b8;-fx-font-size:11;-fx-background-radius:5;-fx-cursor:hand;";}
+    private void styleToggle(ToggleButton tb, ToggleGroup tg) { tb.setStyle(toggleStyle(tb.isSelected())); }
+    private String modeName(ScenarioMode m) {
+        return switch(m){case FOUR_WAY->"Ngã 4";case THREE_WAY->"Ngã 3";case FIVE_WAY->"Ngã 5";case GRID->"Mạng lưới";};}
+    private String scenarioIcon(ScenarioMode m) {
+        return switch(m){case FOUR_WAY->"➕";case THREE_WAY->"⊤";case FIVE_WAY->"✳";case GRID->"⊞";};}
 
-    // ════════════════════════════════════════════════════════════════════
-    //  SimpleTrafficLight — concrete implementation
-    // ════════════════════════════════════════════════════════════════════
-
+    // ══════════════════════════════════════════════════════════════
+    //  Simple TrafficLight impl
+    // ══════════════════════════════════════════════════════════════
     static class SimpleTrafficLight extends TrafficLight {
-        private final LightTiming timing;
-
-        SimpleTrafficLight(String id, LightColor startColor, LightTiming timing) {
-            this.id = id;
-            this.currentColor = startColor;
-            this.timing = timing;
-            this.remainingTime = switch (startColor) {
-                case GREEN  -> timing.getGreenDuration();
-                case YELLOW -> timing.getYellowDuration();
-                case RED    -> timing.getRedDuration();
-            };
-        }
-
-        void forceRed() {
-            this.currentColor = LightColor.RED;
-            this.remainingTime = timing.getRedDuration();
-        }
-
-        @Override
-        protected void switchToNextColor() {
-            currentColor = switch (currentColor) {
-                case GREEN  -> { remainingTime = timing.getYellowDuration(); yield LightColor.YELLOW; }
-                case YELLOW -> { remainingTime = timing.getRedDuration();    yield LightColor.RED;    }
-                case RED    -> { remainingTime = timing.getGreenDuration();  yield LightColor.GREEN;  }
-            };
-        }
-
-        @Override
-        public boolean shouldShowCountdown() { return true; }
+        private final LightTiming t;
+        SimpleTrafficLight(String id, LightColor start, LightTiming t) {
+            this.id=id; this.t=t; this.currentColor=start;
+            this.remainingTime = switch(start){case GREEN->t.getGreenDuration();case YELLOW->t.getYellowDuration();case RED->t.getRedDuration();};}
+        void forceRed() { currentColor=LightColor.RED; remainingTime=t.getRedDuration(); }
+        @Override protected void switchToNextColor() {
+            currentColor = switch(currentColor) {
+                case GREEN  -> { remainingTime=t.getYellowDuration(); yield LightColor.YELLOW; }
+                case YELLOW -> { remainingTime=t.getRedDuration();    yield LightColor.RED;    }
+                case RED    -> { remainingTime=t.getGreenDuration();  yield LightColor.GREEN;  }
+            };}
+        @Override public boolean shouldShowCountdown() { return true; }
     }
 
-    // ════════════════════════════════════════════════════════════════════
-    //  Entry point
-    // ════════════════════════════════════════════════════════════════════
-
-    public static void main(String[] args) {
-        launch(args);
-    }
+    public static void main(String[] args) { launch(args); }
 }

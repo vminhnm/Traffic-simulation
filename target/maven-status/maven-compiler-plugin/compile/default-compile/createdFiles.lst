@@ -18,6 +18,7 @@ app\MainApp.class
 core\vehicle\Vehicle.class
 core\rule\TrafficRuleEvaluator.class
 core\model\Entity.class
+ui\TrafficSimulationUI$ScenarioMode.class
 core\vehicle\Bus.class
 core\vehicle\RenderableState.class
 core\rule\SafeDistancePolicy.class
