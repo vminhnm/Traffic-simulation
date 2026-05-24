@@ -44,14 +44,6 @@ public class EmergencyDriver implements DriverBehavior {
             return DrivingDecision.accelerate(vehicle.getMaxSpeed());
         }
 
-        // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
-        double gap = RULES.gapToFrontVehicle(vehicle, world);
-
-        if (gap >= 0 && gap < CRITICAL_GAP) {
-            // Giảm tốc vừa phải để chờ xe thường nhường đường
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
-        }
-
         return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * SPEED_FACTOR);
     }
 
