@@ -1,0 +1,308 @@
+
+classDiagram
+
+class SimulationEngine {
+  - SimulationWorld world
+  - boolean running
+  + start()
+  + pause()
+  + resume()
+  + update(deltaTime)
+}
+
+class SimulationWorld {
+  - RoadNetwork roadNetwork
+  - List~Vehicle~ vehicles
+  - List~TrafficController~ controllers
+  - CollisionSystem collisionSystem
+  - StatisticsCollector statisticsCollector
+  + update(deltaTime)
+  + getVehicles()
+  + getRoadNetwork()
+}
+
+SimulationEngine --> SimulationWorld
+
+class Entity {
+  <<abstract>>
+  # String id
+  # Vector2D position
+  # double rotation
+  + update(deltaTime, world)*
+}
+
+class Movable {
+  <<interface>>
+  + move(deltaTime)
+  + getVelocity()
+  + setVelocity(velocity)
+}
+
+Entity <|-- Vehicle
+Movable <|.. Vehicle
+
+class Vehicle {
+  <<abstract>>
+  # Vector2D velocity
+  # double maxSpeed
+  # double acceleration
+  # double length
+  # double width
+  # VehicleType type
+  # DriverBehavior driverBehavior
+  # Route route
+  + update(deltaTime, world)
+  + move(deltaTime)
+  + isPriorityVehicle()*
+}
+
+
+
+
+class PriorityVehicle {
+  <<abstract>>
+  # boolean sirenOn
+  + isPriorityVehicle()
+  + isSirenOn()
+}
+
+Vehicle <|-- PriorityVehicle
+
+class VehicleProfile{
+    - String typeKey
+    - String displayName
+    - String basicLabel
+    - String spritePath
+    - VehicleSoundProfile soundProfile
+    - String statisticCategory
+}
+
+class DriverBehavior {
+  <<interface>>
+  + decide(vehicle, world) DrivingDecision
+}
+
+class NormalDriver
+class AggressiveDriver
+class EmergencyDriver
+
+DriverBehavior <|.. NormalDriver
+DriverBehavior <|.. AggressiveDriver
+DriverBehavior <|.. EmergencyDriver
+
+Vehicle --> DriverBehavior
+
+class DrivingDecision {
+  - DrivingAction action
+  - double targetSpeed
+  - Lane targetLane
+  + accelerate(speed)
+  + brake()
+  + stop()
+  + changeLane(lane)
+  + yield()
+}
+
+DriverBehavior --> DrivingDecision
+
+class TrafficRuleEvaluator {
+  + mustStopAtRedLight(vehicle, world)
+  + tooCloseToFrontVehicle(vehicle, world)
+  + shouldYieldToPriorityVehicle(vehicle, world)
+  + canOvertakeSafely(vehicle, world)
+}
+
+NormalDriver --> TrafficRuleEvaluator
+AggressiveDriver --> TrafficRuleEvaluator
+EmergencyDriver --> TrafficRuleEvaluator
+
+class RoadNetwork {
+  - List~Road~ roads
+  - List~Intersection~ intersections
+  + addRoad(road)
+  + addIntersection(intersection)
+  + getConnectedRoads(intersection)
+  + findRelevantTrafficLight(vehicle)
+}
+
+class Road {
+  - String id
+  - Vector2D start
+  - Vector2D end
+  - List~Lane~ lanes
+  - double speedLimit
+  + getDirection()
+}
+
+class Lane {
+  - String id
+  - Road road
+  - List~Vector2D~ pathPoints
+  - LaneType laneType
+  + getPointAt(distance)
+  + getDirectionAt(distance)
+}
+
+class Route {
+  - Queue~Lane~ lanes
+  + getCurrentLane()
+  + getNextLane()
+  + advance()
+}
+
+SimulationWorld --> RoadNetwork
+RoadNetwork --> Road
+RoadNetwork --> Intersection
+Road --> Lane
+Vehicle --> Route
+Route --> Lane
+
+class Intersection {
+  <<abstract>>
+  # String id
+  # Vector2D center
+  # List~Road~ connectedRoads
+  # List~TrafficLight~ trafficLights
+  + getType()*
+  + getConnectedRoads()
+  + getTrafficLights()
+}
+
+
+
+Intersection --> Road
+Intersection --> TrafficLight
+
+class TrafficLight {
+  <<abstract>>
+  # String id
+  # LightColor currentColor
+  # double remainingTime
+  # LightTiming timing
+  + update(deltaTime)
+  + switchManually()
+  + shouldShowCountdown()*
+  # switchToNextColor()
+}
+
+
+class LightTiming {
+  - double redDuration
+  - double yellowDuration
+  - double greenDuration
+}
+
+TrafficLight --> LightTiming
+
+class TrafficController {
+  - Intersection intersection
+  - LightControlStrategy controlStrategy
+  + update(deltaTime)
+  + onLightClicked(light)
+}
+
+class LightControlStrategy {
+  <<interface>>
+  + update(intersection, deltaTime)
+  + handleManualSwitch(light)
+}
+
+
+TrafficController --> Intersection
+TrafficController --> LightControlStrategy
+SimulationWorld --> TrafficController
+
+class Renderer {
+  <<interface>>
+  + render(gc, world, camera)
+}
+
+
+class SimulationCanvas {
+  - Renderer renderer
+  - Camera camera
+  - SimulationWorld world
+  + setRenderMode(mode)
+  + draw()
+}
+
+SimulationCanvas --> Renderer
+SimulationCanvas --> Camera
+SimulationCanvas --> SimulationWorld
+
+class Camera {
+  - double zoom
+  - Vector2D offset
+  + worldToScreen(worldPosition)
+  + scale(value)
+  + setZoom(zoom)
+}
+
+class SoundManager {
+  - Map~SoundType, AudioClip~ clips
+  + loadSounds()
+  + play(type)
+}
+
+class VehicleSoundProfile {
+  - SoundType engineSound
+  - SoundType hornSound
+  - SoundType signalSound
+  - SoundType sirenSound
+}
+
+Vehicle --> VehicleSoundProfile
+SoundManager --> SoundType
+
+class StatisticsCollector {
+  - int totalVehicles
+  - double averageWaitingTime
+  - int collisionCount
+  - double averageSpeed
+  + collect(world)
+}
+
+SimulationWorld --> StatisticsCollector
+
+
+class DrivingAction {
+  <<enum>>
+  ACCELERATE
+  BRAKE
+  STOP
+  CHANGE_LANE_LEFT
+  CHANGE_LANE_RIGHT
+  YIELD
+}
+
+class LightColor {
+  <<enum>>
+  RED
+  YELLOW
+  GREEN
+}
+
+class LaneType {
+  <<enum>>
+  STRAIGHT
+  LEFT_TURN
+  RIGHT_TURN
+  MIXED
+  EMERGENCY
+}
+
+class SoundType {
+  <<enum>>
+  ENGINE_CAR
+  ENGINE_MOTORBIKE
+  BICYCLE_BELL
+  TURN_SIGNAL
+  HORN
+  AMBULANCE_SIREN
+  FIRE_TRUCK_SIREN
+}
+
+Vehicle --> VehicleProfile
+DrivingDecision --> DrivingAction
+TrafficLight --> LightColor
+Lane --> LaneType
