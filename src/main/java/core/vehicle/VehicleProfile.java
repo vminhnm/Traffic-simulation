@@ -31,12 +31,7 @@ public final class VehicleProfile {
     /** Màu mái / cabin xe. */
     private final Color  roofColor;
     /** Đường dẫn tương đối tới file sprite (Graphics mode). */
-<<<<<<< HEAD
-    private final String spritePath;
-=======
-    //private final String spritePath;
     private final RenderAssetKey spriteKey;
->>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 
     // ── Vật lý ───────────────────────────────────────────────────────
     /** Tốc độ tối đa mặc định (px/s ở zoom 1×). */

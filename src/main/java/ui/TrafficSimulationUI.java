@@ -813,11 +813,6 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority() && s.isSirenFlash()) {
             g.setFill(Color.web("#fef3c7",0.25)); g.fillOval(-s.getLength(),-s.getLength(),s.getLength()*2,s.getLength()*2);
         }
-<<<<<<< HEAD
-
-=======
-        /* 
->>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
         java.awt.Color ac = s.getBodyColor();
         g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
         g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
@@ -839,11 +834,6 @@ public class TrafficSimulationUI extends Application {
             g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
             g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
         }
-<<<<<<< HEAD
-
-=======
-        */
-        //Image sprite = SpriteLoader.get(s.getSpriteKey());
         RenderAssetKey dirKey = getSpriteKey(s.getSpriteKey(), s.getRotation());
         Image sprite = SpriteLoader.get(dirKey);
         if (sprite != null) {
@@ -865,21 +855,11 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority()) {
             g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
             g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }
-<<<<<<< HEAD
 
         if (renderMode == RenderMode.BASIC) {
             g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
             g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
         }
-        g.restore();
-    }
-
-=======
-            /* 
-        if (renderMode == RenderMode.BASIC) {
-            g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
-            g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
-        }*/
         g.restore();
     }
 
