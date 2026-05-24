@@ -19,6 +19,7 @@ import core.trafficlight.LightTiming;
 import core.trafficlight.TrafficLight;
 import core.vehicle.Vehicle;
 import core.vehicle.VehicleFactory;
+import graphics.renderer.RenderMode;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -63,7 +64,11 @@ public class TrafficSimulationUI extends Application {
 
     // ── Scenario modes ─────────────────────────────────────────────
     private enum ScenarioMode { FOUR_WAY, THREE_WAY, FIVE_WAY, GRID }
+    private enum CountdownMode { ALWAYS, LAST_10_SECONDS, HIDDEN }
     private ScenarioMode currentMode = ScenarioMode.FOUR_WAY;
+    private RenderMode renderMode = RenderMode.BASIC;
+    private CountdownMode countdownMode = CountdownMode.ALWAYS;
+    private boolean autoLights = true;
 
     // ── Simulation core ────────────────────────────────────────────
     private SimulationWorld  world;
@@ -98,6 +103,7 @@ public class TrafficSimulationUI extends Application {
     private double   spawnInterval = 3.5;
     private int      spawnRR       = 0;
     private int      dirRR         = 0;
+    private int      laneRR        = 0;
     private static final String[] AUTO_TYPES =
         {"car","car","car","car","motorbike","motorbike","bus","truck","bicycle","car","car","car"};
 
@@ -109,6 +115,7 @@ public class TrafficSimulationUI extends Application {
     // ── Collision cooldown: prevent instant re-crash after spawn ───
     private final Map<String, Double> crashedDisplayTimers = new HashMap<>();
     private final List<CollisionEffect> collisionEffects = new ArrayList<>();
+    private final List<LightClickTarget> lightClickTargets = new ArrayList<>();
 
     // ── Debug visualization ────────────────────────────────────────
     private boolean showHitboxes = false;
@@ -160,6 +167,7 @@ public class TrafficSimulationUI extends Application {
         world.registerTrafficLight(lightNE);
         world.registerTrafficLight(lightNW);
         world.registerTrafficLight(lightSE);
+        setLightsAuto(autoLights);
 
         // Seed a few vehicles with staggered starting positions
         switch (currentMode) {
@@ -179,17 +187,19 @@ public class TrafficSimulationUI extends Application {
     private void seedThreeWay() {
         spawnAt("car", makeThreeWayPath(0), 0);
         spawnAt("car", makeThreeWayPath(1), 0);
+        spawnAt("bus", makeThreeWayPath(2), 0);
     }
     private void seedFiveWay() {
-        for (int i = 0; i < 3; i++) spawnAt("car", makeFiveWayPath(i), 0);
-        spawnAt("ambulance", makeFiveWayPath(3), 0);
+        for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i), 0);
+        spawnAt("ambulance", makeFiveWayPath(4), 0);
     }
     private void seedGrid() {
-        spawnAt("car",  makeGridPath(0), 0);
-        spawnAt("bus",  makeGridPath(1), 0);
-        spawnAt("car",  makeGridPath(2), 0);
-        spawnAt("truck",makeGridPath(3), 0);
-        spawnAt("ambulance", makeGridPath(4), 0);
+        spawnAt("car", makeGridPath(0), 0);
+        spawnAt("bus", makeGridPath(1), 0);
+        spawnAt("car", makeGridPath(2), 0);
+        spawnAt("truck", makeGridPath(3), 0);
+        spawnAt("motorbike", makeGridPath(4), 0);
+        spawnAt("ambulance", makeGridPath(5), 0);
     }
 
     // ══════════════════════════════════════════════════════════════
@@ -220,6 +230,7 @@ public class TrafficSimulationUI extends Application {
 
     private StackPane buildCanvasArea() {
         canvas = new Canvas(CANVAS_W, CANVAS_H);
+        canvas.setOnMouseClicked(e -> handleCanvasClick(e.getX(), e.getY()));
         StackPane sp = new StackPane(canvas);
         sp.setStyle("-fx-background-color: #0d1b2a;");
         return sp;
@@ -301,6 +312,18 @@ public class TrafficSimulationUI extends Application {
             log("🚦 Đổi đèn thủ công.");
         });
 
+        ToggleButton btnAutoLights = new ToggleButton("🤖 Đèn tự động");
+        btnAutoLights.setSelected(autoLights);
+        btnAutoLights.setStyle(toggleStyle(true));
+        btnAutoLights.setMaxWidth(Double.MAX_VALUE);
+        btnAutoLights.selectedProperty().addListener((obs, oldVal, selected) -> {
+            autoLights = selected;
+            setLightsAuto(autoLights);
+            btnAutoLights.setText(autoLights ? "🤖 Đèn tự động" : "👆 Đèn thủ công");
+            btnAutoLights.setStyle(toggleStyle(selected));
+            log(autoLights ? "🤖 Đèn tự động." : "👆 Đèn thủ công: click vào đèn để đổi màu.");
+        });
+
         Button btnToggleHitbox = new Button("📦 Ẩn Hitbox");
         styleBtn(btnToggleHitbox, "#8b5cf6");
         btnToggleHitbox.setMaxWidth(Double.MAX_VALUE);
@@ -308,6 +331,30 @@ public class TrafficSimulationUI extends Application {
             showHitboxes = !showHitboxes;
             btnToggleHitbox.setText(showHitboxes ? "📦 Hiện Hitbox" : "📦 Ẩn Hitbox");
             log(showHitboxes ? "📦 Hiện hitbox" : "📦 Ẩn hitbox");
+        });
+
+        ToggleButton btnRenderMode = new ToggleButton("🎨 Basic");
+        btnRenderMode.setSelected(false);
+        btnRenderMode.setStyle(toggleStyle(false));
+        btnRenderMode.setMaxWidth(Double.MAX_VALUE);
+        btnRenderMode.selectedProperty().addListener((obs, oldVal, graphics) -> {
+            renderMode = graphics ? RenderMode.GRAPHICS : RenderMode.BASIC;
+            btnRenderMode.setText(graphics ? "🖼 Graphics" : "🎨 Basic");
+            btnRenderMode.setStyle(toggleStyle(graphics));
+            log("🎨 Chế độ hiển thị: " + renderMode);
+        });
+
+        ComboBox<String> cbCountdown = new ComboBox<>();
+        cbCountdown.getItems().addAll("Đếm luôn", "Chỉ 10 giây cuối", "Không đếm");
+        cbCountdown.setValue("Đếm luôn");
+        styleCombo(cbCountdown);
+        cbCountdown.setOnAction(e -> {
+            countdownMode = switch (cbCountdown.getSelectionModel().getSelectedIndex()) {
+                case 1 -> CountdownMode.LAST_10_SECONDS;
+                case 2 -> CountdownMode.HIDDEN;
+                default -> CountdownMode.ALWAYS;
+            };
+            log("⏱ Kiểu đếm đèn: " + cbCountdown.getValue());
         });
 
         Label spdLbl = smallLbl("⚡ Tốc độ mô phỏng: 1.0×");
@@ -326,7 +373,9 @@ public class TrafficSimulationUI extends Application {
             spawnLbl.setText(String.format("🕐 Khoảng sinh xe: %.1fs", spawnInterval));
         });
 
-        panel.getChildren().addAll(btnStartPause, btnReset, btnSwitchLight, btnToggleHitbox,
+        panel.getChildren().addAll(btnStartPause, btnReset, btnSwitchLight, btnAutoLights,
+                                   btnRenderMode, btnToggleHitbox,
+                                   smallLbl("Kiểu đếm đèn:"), cbCountdown,
                                    spdLbl, sldSpd, spawnLbl, sldSpawn);
         panel.getChildren().add(separator());
 
@@ -394,9 +443,9 @@ public class TrafficSimulationUI extends Application {
         cb.getItems().clear();
         switch (currentMode) {
             case FOUR_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông");
-            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","➡ Tây→Nam");
-            case FIVE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông","↗ Đông-Bắc");
-            case GRID -> cb.getItems().addAll("Ô lưới 1","Ô lưới 2","Ô lưới 3","Ô lưới 4","Ô lưới 5");
+            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam");
+            case FIVE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông","↙ Đông-Bắc→Tây");
+            case GRID -> cb.getItems().addAll("⬇ Cột trái","⬆ Cột giữa","⬇ Cột phải","➡ Hàng trên","⬅ Hàng giữa","➡ Hàng dưới");
         }
         cb.setValue(cb.getItems().get(0));
     }
@@ -485,6 +534,7 @@ public class TrafficSimulationUI extends Application {
     // ══════════════════════════════════════════════════════════════
     private void render() {
         GraphicsContext g = canvas.getGraphicsContext2D();
+        lightClickTargets.clear();
         g.setFill(Color.web("#1a2332")); g.fillRect(0,0,CANVAS_W,CANVAS_H);
 
         switch (currentMode) {
@@ -526,29 +576,37 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
         drawRoadEdges4Way(g, cx, cy);
         drawZebra4Way(g, cx, cy);
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor()); // N
-        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS.getColor()); // S
-        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW.getColor()); // E
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor()); // W
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS); // N
+        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS); // S
+        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW); // E
+        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW); // W
     }
 
     // ── Three-way (T-junction): roads from N, S, W — no East arm ──
     private void renderThreeWay(GraphicsContext g) {
         double cx = CANVAS_W/2.0, cy = CANVAS_H/2.0;
-        drawGrass(g);
-        // vertical road (N→S, but only N half + junction)
-        fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, cy+ROAD_HALF);
-        // horizontal road West arm only
+        g.setFill(Color.web("#1e3a2f"));
+        g.fillRect(0, 0, CANVAS_W, CANVAS_H);
+        fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, CANVAS_H);
         fillRoad(g, 0, cy-ROAD_HALF, cx+ROAD_HALF, ROAD_HALF*2);
         g.setFill(Color.web("#4b5563")); g.fillRect(cx-ROAD_HALF,cy-ROAD_HALF,ROAD_HALF*2,ROAD_HALF*2);
         drawLaneCenter(g, cx, 0, cx, cy-ROAD_HALF);
+        drawLaneCenter(g, cx, cy+ROAD_HALF, cx, CANVAS_H);
         drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
         // Right-side cap (east dead end)
-        g.setFill(Color.web("#374151"));
+        g.setFill(Color.web("#1e3a2f"));
         g.fillRect(cx+ROAD_HALF, cy-ROAD_HALF, 12, ROAD_HALF*2);
+        g.setStroke(Color.web("#e2e8f0",0.4)); g.setLineWidth(1.2);
+        g.strokeLine(cx-ROAD_HALF, 0, cx-ROAD_HALF, cy-ROAD_HALF);
+        g.strokeLine(cx+ROAD_HALF, 0, cx+ROAD_HALF, cy-ROAD_HALF);
+        g.strokeLine(cx-ROAD_HALF, cy+ROAD_HALF, cx-ROAD_HALF, CANVAS_H);
+        g.strokeLine(cx+ROAD_HALF, cy+ROAD_HALF, cx+ROAD_HALF, CANVAS_H);
+        g.strokeLine(0, cy-ROAD_HALF, cx-ROAD_HALF, cy-ROAD_HALF);
+        g.strokeLine(0, cy+ROAD_HALF, cx-ROAD_HALF, cy+ROAD_HALF);
         // lights
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor());
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor());
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS);
+        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4, lightNS);
+        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW);
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("T-JUNCTION", cx-40, CANVAS_H-18);
     }
@@ -560,12 +618,13 @@ public class TrafficSimulationUI extends Application {
         // main 4 arms
         fillRoad(g, cx-ROAD_HALF, 0, ROAD_HALF*2, CANVAS_H);
         fillRoad(g, 0, cy-ROAD_HALF, CANVAS_W, ROAD_HALF*2);
-        // 5th arm: diagonal NE
-        double armLen = 200;
+        // 5th arm: full diagonal NE road
+        double armLen = 520;
         g.save();
-        g.translate(cx+ROAD_HALF, cy-ROAD_HALF);
+        g.translate(cx, cy);
         g.rotate(-45);
         fillRoad(g, 0, -ROAD_HALF, armLen, ROAD_HALF*2);
+        drawLaneCenter(g, 0, 0, armLen, 0);
         g.restore();
         g.setFill(Color.web("#4b5563"));
         g.fillOval(cx-ROAD_HALF*1.3, cy-ROAD_HALF*1.3, ROAD_HALF*2.6, ROAD_HALF*2.6);
@@ -573,11 +632,11 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, cx, cy+ROAD_HALF, cx, CANVAS_H);
         drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS.getColor());
-        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS.getColor());
-        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW.getColor());
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW.getColor());
-        drawLight(g, cx+ROAD_HALF+50, cy-ROAD_HALF-80, lightNE.getColor());
+        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-40, lightNS);
+        drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6,  lightNS);
+        drawLight(g, cx+ROAD_HALF+10, cy+ROAD_HALF+6,  lightEW);
+        drawLight(g, cx-ROAD_HALF-26, cy-ROAD_HALF-48, lightEW);
+        drawLight(g, cx+ROAD_HALF+96, cy-ROAD_HALF-126, lightNE);
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("5-WAY INTERSECTION", cx-65, CANVAS_H-18);
     }
@@ -585,8 +644,8 @@ public class TrafficSimulationUI extends Application {
     // ── Grid network (2×2 blocks = 3×3 intersections) ─────────────
     private void renderGrid(GraphicsContext g) {
         drawGrassGrid(g);
-        double gapX = CANVAS_W / 3.0;
-        double gapY = CANVAS_H / 3.0;
+        double gapX = CANVAS_W / 4.0;
+        double gapY = CANVAS_H / 4.0;
         // 3 vertical roads
         for (int col = 0; col < 3; col++) {
             double x = gapX * (col+1);
@@ -605,7 +664,7 @@ public class TrafficSimulationUI extends Application {
                 g.fillRect(x-ROAD_HALF*0.7, y-ROAD_HALF*0.7, ROAD_HALF*1.4, ROAD_HALF*1.4);
                 // traffic lights at each intersection (alternate)
                 SimpleTrafficLight lt = ((col+row)%2==0) ? lightNS : lightEW;
-                drawLight(g, x+ROAD_HALF*0.7+2, y-ROAD_HALF*0.7-28, lt.getColor());
+                drawLight(g, x+ROAD_HALF*0.7+2, y-ROAD_HALF*0.7-28, lt);
             }
         }
         // lane centers
@@ -668,6 +727,20 @@ public class TrafficSimulationUI extends Application {
     }
 
     private void drawLight(GraphicsContext g, double x, double y, LightColor color) {
+        drawLightBody(g, x, y, color);
+    }
+
+    private void drawLight(GraphicsContext g, double x, double y, SimpleTrafficLight light) {
+        lightClickTargets.add(new LightClickTarget(x, y, 15, 42, light));
+        drawLightBody(g, x, y, light.getColor());
+        if (shouldDrawCountdown(light)) {
+            g.setFill(Color.web("#f8fafc"));
+            g.setFont(Font.font("Segoe UI", FontWeight.BOLD, 10));
+            g.fillText(String.format("%.0f", Math.ceil(light.getRemainingTime())), x - 2, y + 54);
+        }
+    }
+
+    private void drawLightBody(GraphicsContext g, double x, double y, LightColor color) {
         g.setFill(Color.web("#1f2937")); g.fillRoundRect(x,y,15,42,4,4);
         boolean r = color==LightColor.RED, yl = color==LightColor.YELLOW, gr = color==LightColor.GREEN;
         Glow glow = new Glow(0.9);
@@ -679,11 +752,22 @@ public class TrafficSimulationUI extends Application {
         if (gr) g.setEffect(glow); g.fillOval(x+2,y+28,11,11); g.setEffect(null);
     }
 
+    private boolean shouldDrawCountdown(SimpleTrafficLight light) {
+        return switch (countdownMode) {
+            case ALWAYS -> true;
+            case LAST_10_SECONDS -> light.getRemainingTime() <= 10;
+            case HIDDEN -> false;
+        };
+    }
+
+
     private void drawVehicle(GraphicsContext g, core.vehicle.RenderableState s) {
         double x=s.getPosition().x, y=s.getPosition().y;
         g.save();
         g.translate(x,y);
         g.rotate(Math.toDegrees(s.getRotation()));
+        double scale = currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
+        g.scale(scale, scale);
 
         if (s.isCrashed()) {
             g.setFill(Color.web("#374151")); g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),4,4);
@@ -700,14 +784,23 @@ public class TrafficSimulationUI extends Application {
         g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
         g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
 
-        java.awt.Color rc = s.getRoofColor();
-        g.setFill(Color.rgb(rc.getRed(),rc.getGreen(),rc.getBlue()));
-        g.fillRoundRect(-s.getLength()*0.26,-s.getWidth()*0.36,s.getLength()*0.52,s.getWidth()*0.72,3,3);
+        if (renderMode == RenderMode.GRAPHICS) {
+            java.awt.Color rc = s.getRoofColor();
+            g.setFill(Color.rgb(rc.getRed(),rc.getGreen(),rc.getBlue()));
+            g.fillRoundRect(-s.getLength()*0.26,-s.getWidth()*0.36,s.getLength()*0.52,s.getWidth()*0.72,3,3);
 
-        // Headlights
-        g.setFill(Color.web("#fef9c3",0.9));
-        g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
-        g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
+            g.setFill(Color.web("#dbeafe",0.85));
+            g.fillRoundRect(s.getLength()*0.05,-s.getWidth()*0.28,s.getLength()*0.18,s.getWidth()*0.56,2,2);
+            g.setFill(Color.web("#111827"));
+            g.fillOval(-s.getLength()*0.24,-s.getWidth()*0.62,5,5);
+            g.fillOval(s.getLength()*0.20,-s.getWidth()*0.62,5,5);
+            g.fillOval(-s.getLength()*0.24,s.getWidth()*0.34,5,5);
+            g.fillOval(s.getLength()*0.20,s.getWidth()*0.34,5,5);
+
+            g.setFill(Color.web("#fef9c3",0.9));
+            g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
+            g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
+        }
 
         if (s.isYielding()) { g.setStroke(Color.ORANGE); g.setLineWidth(2);
             g.strokeRoundRect(-s.getLength()/2-2,-s.getWidth()/2-2,s.getLength()+4,s.getWidth()+4,5,5); }
@@ -717,8 +810,10 @@ public class TrafficSimulationUI extends Application {
             g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
             g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }
 
-        g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
-        g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
+        if (renderMode == RenderMode.BASIC) {
+            g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
+            g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
+        }
         g.restore();
     }
 
@@ -816,7 +911,11 @@ public class TrafficSimulationUI extends Application {
     }
 
     private int dirCountForMode() {
-        return switch (currentMode) { case THREE_WAY -> 3; case FIVE_WAY -> 5; default -> 4; };
+        return switch (currentMode) {
+            case THREE_WAY, FOUR_WAY -> 4;
+            case FIVE_WAY -> 5;
+            case GRID -> 6;
+        };
     }
 
     private void spawnAt(String type, VehiclePath path, double extraCooldown) {
@@ -866,28 +965,30 @@ public class TrafficSimulationUI extends Application {
     // ══════════════════════════════════════════════════════════════
     private double cx() { return CANVAS_W/2.0; }
     private double cy() { return CANVAS_H/2.0; }
+    private int nextLane() { return laneRR++ % 2; }
+    private double laneOffset(int lane) { return LANE_W / 2.0 + Math.min(Math.max(lane, 0), 1) * LANE_W; }
 
     // ── 4-way ─────────────────────────────────────────────────────
     private VehiclePath makeNorthSouthPath(int lane) {
-        double x = cx() + LANE_W + lane*LANE_W;
+        double x = cx() + laneOffset(lane);
         return new VehiclePath("ns"+lane, List.of(
             new Vector2D(x,-20), new Vector2D(x, cy()-ROAD_HALF-10),
             new Vector2D(x, cy()), new Vector2D(x, CANVAS_H+20)), 1,"light-NS","N","S");
     }
     private VehiclePath makeSouthNorthPath(int lane) {
-        double x = cx() - LANE_W - lane*LANE_W;
+        double x = cx() - laneOffset(lane);
         return new VehiclePath("sn"+lane, List.of(
             new Vector2D(x,CANVAS_H+20), new Vector2D(x, cy()+ROAD_HALF+10),
             new Vector2D(x, cy()), new Vector2D(x,-20)), 1,"light-NS","S","N");
     }
     private VehiclePath makeEastWestPath(int lane) {
-        double y = cy() + LANE_W + lane*LANE_W;
+        double y = cy() + laneOffset(lane);
         return new VehiclePath("ew"+lane, List.of(
             new Vector2D(CANVAS_W+20,y), new Vector2D(cx()+ROAD_HALF+10,y),
             new Vector2D(cx(),y), new Vector2D(-20,y)), 1,"light-EW","E","W");
     }
     private VehiclePath makeWestEastPath(int lane) {
-        double y = cy() - LANE_W - lane*LANE_W;
+        double y = cy() - laneOffset(lane);
         return new VehiclePath("we"+lane, List.of(
             new Vector2D(-20,y), new Vector2D(cx()-ROAD_HALF-10,y),
             new Vector2D(cx(),y), new Vector2D(CANVAS_W+20,y)), 1,"light-EW","W","E");
@@ -895,15 +996,28 @@ public class TrafficSimulationUI extends Application {
 
     // ── 3-way ─────────────────────────────────────────────────────
     private VehiclePath makeThreeWayPath(int idx) {
-        double cx=cx(), cy=cy(), lw=LANE_W/2.0;
-        return switch(idx) {
-            case 0 -> new VehiclePath("3w-ns", List.of(
-                new Vector2D(cx+lw,-20), new Vector2D(cx+lw,cy-ROAD_HALF-10),
-                new Vector2D(cx+lw,cy+ROAD_HALF-10), new Vector2D(cx+lw,cy+ROAD_HALF+40)), 1,"light-NS","N","S");
-            default -> new VehiclePath("3w-wn", List.of(
+        double cx=cx(), cy=cy(), lw=laneOffset(0);
+        return switch(idx%4) {
+            case 0 -> {
+                double x = cx + laneOffset(nextLane());
+                yield new VehiclePath("3w-ns", List.of(
+                    new Vector2D(x,-20), new Vector2D(x,cy-ROAD_HALF-10),
+                    new Vector2D(x,cy+ROAD_HALF+10), new Vector2D(x,CANVAS_H+20)), 1,"light-NS","N","S");
+            }
+            case 1 -> {
+                double x = cx - laneOffset(nextLane());
+                yield new VehiclePath("3w-sn", List.of(
+                    new Vector2D(x,CANVAS_H+20), new Vector2D(x,cy+ROAD_HALF+10),
+                    new Vector2D(x,cy-ROAD_HALF-10), new Vector2D(x,-20)), 1,"light-NS","S","N");
+            }
+            case 2 -> new VehiclePath("3w-wn", List.of(
                 new Vector2D(-20,cy-lw), new Vector2D(cx-ROAD_HALF-10,cy-lw),
-                new Vector2D(cx,cy-lw), new Vector2D(cx,cy-ROAD_HALF-20),
-                new Vector2D(cx,-20)), 1,"light-EW","W","N");
+                new Vector2D(cx-lw,cy-lw), new Vector2D(cx-lw,cy-ROAD_HALF-20),
+                new Vector2D(cx-lw,-20)), 1,"light-EW","W","N");
+            default -> new VehiclePath("3w-ws", List.of(
+                new Vector2D(-20,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+                new Vector2D(cx+lw,cy+lw), new Vector2D(cx+lw,cy+ROAD_HALF+20),
+                new Vector2D(cx+lw,CANVAS_H+20)), 1,"light-EW","W","S");
         };
     }
 
@@ -911,54 +1025,60 @@ public class TrafficSimulationUI extends Application {
     private VehiclePath makeFiveWayPath(int idx) {
         double cx=cx(), cy=cy(), lw=LANE_W/2.0;
         return switch(idx%5) {
-            case 0 -> makeNorthSouthPath(0);
-            case 1 -> makeSouthNorthPath(0);
-            case 2 -> makeEastWestPath(0);
-            case 3 -> makeWestEastPath(0);
+            case 0 -> makeNorthSouthPath(nextLane());
+            case 1 -> makeSouthNorthPath(nextLane());
+            case 2 -> makeEastWestPath(nextLane());
+            case 3 -> makeWestEastPath(nextLane());
             default -> new VehiclePath("ne-diag", List.of(
-                new Vector2D(CANVAS_W+20,-20), new Vector2D(cx+ROAD_HALF+60,cy-ROAD_HALF-60),
-                new Vector2D(cx+ROAD_HALF,cy-ROAD_HALF),
-                new Vector2D(cx,cy), new Vector2D(-20,cy+lw)), 1,"light-NE","NE","SW");
+                new Vector2D(CANVAS_W+20,-20), new Vector2D(cx+ROAD_HALF+130,cy-ROAD_HALF-130),
+                new Vector2D(cx+ROAD_HALF+35,cy-ROAD_HALF-35),
+                new Vector2D(cx,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+                new Vector2D(-20,cy+lw)), 1,"light-NE","NE","W");
         };
     }
 
     // ── Grid paths ────────────────────────────────────────────────
     private VehiclePath makeGridPath(int idx) {
-        double gx = CANVAS_W/3.0, gy = CANVAS_H/3.0;
-        return switch(idx%5) {
-            // vertical downward through col 1
+        double gx = CANVAS_W/4.0, gy = CANVAS_H/4.0;
+        double lane = LANE_W / 2.0;
+        return switch(idx%6) {
             case 0 -> new VehiclePath("grid-v1", List.of(
-                new Vector2D(gx,-20), new Vector2D(gx,gy-16),
-                new Vector2D(gx,gy+16), new Vector2D(gx,gy*2-16),
-                new Vector2D(gx,gy*2+16), new Vector2D(gx,CANVAS_H+20)), 1,"light-NS","N1","S1");
-            // vertical downward through col 2
-            case 1 -> new VehiclePath("grid-v2", List.of(
-                new Vector2D(gx*2,-20), new Vector2D(gx*2,gy*2-16),
-                new Vector2D(gx*2,gy*2+16), new Vector2D(gx*2,CANVAS_H+20)), 1,"light-EW","N2","S2");
-            // vertical downward col 3
+                new Vector2D(gx+lane,-20), new Vector2D(gx+lane,gy-16),
+                new Vector2D(gx+lane,gy+16), new Vector2D(gx+lane,gy*2-16),
+                new Vector2D(gx+lane,gy*2+16), new Vector2D(gx+lane,CANVAS_H+20)), 1,"light-NS","N1","S1");
+            case 1 -> new VehiclePath("grid-v2-up", List.of(
+                new Vector2D(gx*2-lane,CANVAS_H+20), new Vector2D(gx*2-lane,gy*3+16),
+                new Vector2D(gx*2-lane,gy*3-16), new Vector2D(gx*2-lane,gy*2+16),
+                new Vector2D(gx*2-lane,gy*2-16), new Vector2D(gx*2-lane,gy+16),
+                new Vector2D(gx*2-lane,gy-16), new Vector2D(gx*2-lane,-20)), 1,"light-EW","S2","N2");
             case 2 -> new VehiclePath("grid-v3", List.of(
-                new Vector2D(gx*3,-20), new Vector2D(gx*3,gy-16),
-                new Vector2D(gx*3,gy+16), new Vector2D(gx*3,CANVAS_H+20)), 1,"light-NS","N3","S3");
-            // horizontal right row 1
+                new Vector2D(gx*3+lane,-20), new Vector2D(gx*3+lane,gy-16),
+                new Vector2D(gx*3+lane,gy+16), new Vector2D(gx*3+lane,gy*2-16),
+                new Vector2D(gx*3+lane,gy*2+16), new Vector2D(gx*3+lane,CANVAS_H+20)), 1,"light-NS","N3","S3");
             case 3 -> new VehiclePath("grid-h1", List.of(
-                new Vector2D(-20,gy), new Vector2D(gx-16,gy),
-                new Vector2D(gx+16,gy), new Vector2D(gx*2-16,gy),
-                new Vector2D(gx*2+16,gy), new Vector2D(CANVAS_W+20,gy)), 1,"light-EW","W1","E1");
-            // horizontal right row 2
-            default -> new VehiclePath("grid-h2", List.of(
-                new Vector2D(-20,gy*2), new Vector2D(gx-16,gy*2),
-                new Vector2D(gx*2+16,gy*2), new Vector2D(CANVAS_W+20,gy*2)), 1,"light-NS","W2","E2");
+                new Vector2D(-20,gy-lane), new Vector2D(gx-16,gy-lane),
+                new Vector2D(gx+16,gy-lane), new Vector2D(gx*2-16,gy-lane),
+                new Vector2D(gx*2+16,gy-lane), new Vector2D(CANVAS_W+20,gy-lane)), 1,"light-EW","W1","E1");
+            case 4 -> new VehiclePath("grid-h2-left", List.of(
+                new Vector2D(CANVAS_W+20,gy*2+lane), new Vector2D(gx*3+16,gy*2+lane),
+                new Vector2D(gx*3-16,gy*2+lane), new Vector2D(gx*2+16,gy*2+lane),
+                new Vector2D(gx*2-16,gy*2+lane), new Vector2D(gx-16,gy*2+lane),
+                new Vector2D(-20,gy*2+lane)), 1,"light-NS","E2","W2");
+            default -> new VehiclePath("grid-h3", List.of(
+                new Vector2D(-20,gy*3-lane), new Vector2D(gx-16,gy*3-lane),
+                new Vector2D(gx+16,gy*3-lane), new Vector2D(gx*2-16,gy*3-lane),
+                new Vector2D(gx*2+16,gy*3-lane), new Vector2D(CANVAS_W+20,gy*3-lane)), 1,"light-EW","W3","E3");
         };
     }
 
     private VehiclePath getPathByModeAndDir(int idx) {
         return switch (currentMode) {
             case FOUR_WAY -> switch(idx%4) {
-                case 0->makeNorthSouthPath(0); case 1->makeSouthNorthPath(0);
-                case 2->makeEastWestPath(0); default->makeWestEastPath(0);};
-            case THREE_WAY -> makeThreeWayPath(idx%3);
+                case 0->makeNorthSouthPath(nextLane()); case 1->makeSouthNorthPath(nextLane());
+                case 2->makeEastWestPath(nextLane()); default->makeWestEastPath(nextLane());};
+            case THREE_WAY -> makeThreeWayPath(idx%4);
             case FIVE_WAY  -> makeFiveWayPath(idx%5);
-            case GRID      -> makeGridPath(idx%5);
+            case GRID      -> makeGridPath(idx%6);
         };
     }
 
@@ -970,9 +1090,28 @@ public class TrafficSimulationUI extends Application {
         else { engine.resume(); lastNano=0; btnStartPause.setText("⏸ Tạm dừng"); log("▶ Tiếp tục."); }
     }
 
+    private void handleCanvasClick(double x, double y) {
+        if (autoLights) return;
+        for (LightClickTarget target : lightClickTargets) {
+            if (target.contains(x, y)) {
+                target.light.switchManually();
+                log("🚦 Click đổi đèn: " + target.light.getId());
+                return;
+            }
+        }
+    }
+
+    private void setLightsAuto(boolean auto) {
+        if (lightNS != null) lightNS.setAutoSwitch(auto);
+        if (lightEW != null) lightEW.setAutoSwitch(auto);
+        if (lightNE != null) lightNE.setAutoSwitch(auto);
+        if (lightNW != null) lightNW.setAutoSwitch(auto);
+        if (lightSE != null) lightSE.setAutoSwitch(auto);
+    }
+
     private void resetSimulation() {
         if (engine!=null) engine.pause();
-        simTime=0; spawnTimer=0; spawnRR=0; dirRR=0;
+        simTime=0; spawnTimer=0; spawnRR=0; dirRR=0; laneRR=0;
         totalSpawned.set(0); totalFinished.set(0); totalCrashed.set(0); totalCollisions.set(0);
         totalTravelTime = 0;
         spawnTimes.clear();
@@ -1024,10 +1163,16 @@ public class TrafficSimulationUI extends Application {
     // ══════════════════════════════════════════════════════════════
     static class SimpleTrafficLight extends TrafficLight {
         private final LightTiming t;
+        private boolean autoSwitch = true;
         SimpleTrafficLight(String id, LightColor start, LightTiming t) {
             this.id=id; this.t=t; this.currentColor=start;
             this.remainingTime = switch(start){case GREEN->t.getGreenDuration();case YELLOW->t.getYellowDuration();case RED->t.getRedDuration();};}
         void forceRed() { currentColor=LightColor.RED; remainingTime=t.getRedDuration(); }
+        void setAutoSwitch(boolean autoSwitch) { this.autoSwitch = autoSwitch; }
+        double getRemainingTime() { return remainingTime; }
+        @Override public void update(double deltaTime) {
+            if (autoSwitch) super.update(deltaTime);
+        }
         @Override protected void switchToNextColor() {
             currentColor = switch(currentColor) {
                 case GREEN  -> { remainingTime=t.getYellowDuration(); yield LightColor.YELLOW; }
@@ -1035,6 +1180,26 @@ public class TrafficSimulationUI extends Application {
                 case RED    -> { remainingTime=t.getGreenDuration();  yield LightColor.GREEN;  }
             };}
         @Override public boolean shouldShowCountdown() { return true; }
+    }
+
+    private static final class LightClickTarget {
+        private final double x;
+        private final double y;
+        private final double width;
+        private final double height;
+        private final SimpleTrafficLight light;
+
+        private LightClickTarget(double x, double y, double width, double height, SimpleTrafficLight light) {
+            this.x = x;
+            this.y = y;
+            this.width = width;
+            this.height = height;
+            this.light = light;
+        }
+
+        private boolean contains(double px, double py) {
+            return px >= x && px <= x + width && py >= y && py <= y + height;
+        }
     }
 
     private static final class CollisionEffect {
