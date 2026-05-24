@@ -4,6 +4,10 @@ import java.awt.Color;
 
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
+<<<<<<< HEAD
+=======
+import graphics.sprite.RenderAssetKey;
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 import sound.SoundType;
 
 /**
@@ -44,7 +48,12 @@ public class Car extends Vehicle {
                 .basicLabel("Car")
                 .bodyColor(body)
                 .roofColor(body.darker())
+<<<<<<< HEAD
                 .spritePath("assets/sprites/car.png")
+=======
+                //.spritePath("assets/sprites/car.png")
+                .spriteKey(RenderAssetKey.CAR_EAST)
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
                 .defaultMaxSpeed(90)        // px/s
                 .defaultAcceleration(45)    // px/s²
                 .defaultLength(36)          // px

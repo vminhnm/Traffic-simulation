@@ -5,6 +5,7 @@ import java.awt.Color;
 import core.driver.DriverBehavior;
 import core.driver.EmergencyDriver;
 import core.road.VehiclePath;
+import graphics.sprite.RenderAssetKey;
 import sound.SoundType;
 
 /**
@@ -35,7 +36,7 @@ public class FireTruck extends PriorityVehicle {
                 .basicLabel("Fire")
                 .bodyColor(new Color(210, 30, 30))      // đỏ rực
                 .roofColor(new Color(160, 10, 10))
-                .spritePath("assets/sprites/firetruck.png")
+                .spriteKey(RenderAssetKey.FIRETRUCK_EAST)
                 .defaultMaxSpeed(100)
                 .defaultAcceleration(40)
                 .defaultLength(58)

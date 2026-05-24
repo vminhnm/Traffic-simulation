@@ -2,6 +2,7 @@ package core.vehicle;
 
 import java.awt.Color;
 
+import graphics.sprite.RenderAssetKey;
 import sound.SoundType;
 
 /**
@@ -30,7 +31,12 @@ public final class VehicleProfile {
     /** Màu mái / cabin xe. */
     private final Color  roofColor;
     /** Đường dẫn tương đối tới file sprite (Graphics mode). */
+<<<<<<< HEAD
     private final String spritePath;
+=======
+    //private final String spritePath;
+    private final RenderAssetKey spriteKey;
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 
     // ── Vật lý ───────────────────────────────────────────────────────
     /** Tốc độ tối đa mặc định (px/s ở zoom 1×). */
@@ -56,7 +62,7 @@ public final class VehicleProfile {
         this.basicLabel          = b.basicLabel;
         this.bodyColor           = b.bodyColor;
         this.roofColor           = b.roofColor;
-        this.spritePath          = b.spritePath;
+        this.spriteKey           = b.spriteKey;
         this.defaultMaxSpeed     = b.defaultMaxSpeed;
         this.defaultAcceleration = b.defaultAcceleration;
         this.defaultLength       = b.defaultLength;
@@ -73,7 +79,7 @@ public final class VehicleProfile {
     public String  getBasicLabel()          { return basicLabel;          }
     public Color   getBodyColor()           { return bodyColor;           }
     public Color   getRoofColor()           { return roofColor;           }
-    public String  getSpritePath()          { return spritePath;          }
+    public RenderAssetKey getSpriteKey()    { return spriteKey;           }
     public double  getDefaultMaxSpeed()     { return defaultMaxSpeed;     }
     public double  getDefaultAcceleration() { return defaultAcceleration; }
     public double  getDefaultLength()       { return defaultLength;       }
@@ -100,7 +106,7 @@ public final class VehicleProfile {
         private String   basicLabel          = "?";
         private Color    bodyColor           = Color.GRAY;
         private Color    roofColor           = Color.DARK_GRAY;
-        private String   spritePath          = "";
+        private RenderAssetKey spriteKey       = null;
         private double   defaultMaxSpeed     = 80;
         private double   defaultAcceleration = 40;
         private double   defaultLength       = 40;
@@ -115,7 +121,7 @@ public final class VehicleProfile {
         public Builder basicLabel(String v)          { basicLabel          = v; return this; }
         public Builder bodyColor(Color v)            { bodyColor           = v; return this; }
         public Builder roofColor(Color v)            { roofColor           = v; return this; }
-        public Builder spritePath(String v)          { spritePath          = v; return this; }
+        public Builder spriteKey(RenderAssetKey v)   { spriteKey           = v; return this; }
         public Builder defaultMaxSpeed(double v)     { defaultMaxSpeed     = v; return this; }
         public Builder defaultAcceleration(double v) { defaultAcceleration = v; return this; }
         public Builder defaultLength(double v)       { defaultLength       = v; return this; }

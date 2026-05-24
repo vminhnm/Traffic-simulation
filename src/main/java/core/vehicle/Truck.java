@@ -4,6 +4,7 @@ import java.awt.Color;
 
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
+import graphics.sprite.RenderAssetKey;
 import sound.SoundType;
 
 /**
@@ -29,7 +30,7 @@ public class Truck extends Vehicle {
                 .basicLabel("Truck")
                 .bodyColor(new Color(100, 100, 140))  // xanh xám
                 .roofColor(new Color(70,  70, 110))
-                .spritePath("assets/sprites/truck.png")
+                .spriteKey(RenderAssetKey.TRUCK_EAST)
                 .defaultMaxSpeed(55)
                 .defaultAcceleration(15)        // gia tốc chậm
                 .defaultLength(72)              // dài nhất trong mô phỏng

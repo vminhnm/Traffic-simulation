@@ -4,6 +4,7 @@ import java.awt.Color;
 
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
+import graphics.sprite.RenderAssetKey;
 import sound.SoundType;
 
 /**
@@ -29,7 +30,7 @@ public class Bus extends Vehicle {
                 .basicLabel("Bus")
                 .bodyColor(new Color(255, 200, 0))    // vàng
                 .roofColor(new Color(200, 150, 0))
-                .spritePath("assets/sprites/bus.png")
+                .spriteKey(RenderAssetKey.BUS_EAST)
                 .defaultMaxSpeed(65)
                 .defaultAcceleration(22)
                 .defaultLength(60)

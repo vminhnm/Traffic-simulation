@@ -2,6 +2,7 @@ package core.vehicle;
 
 import java.awt.Color;
 
+import graphics.sprite.RenderAssetKey;
 import util.Vector2D;
 
 /**
@@ -21,7 +22,7 @@ public final class RenderableState {
     private final String    basicLabel;    // nhãn chế độ Basic ("Car", "Ambu"…)
     private final Color     bodyColor;
     private final Color     roofColor;
-    private final String    spritePath;    // đường dẫn sprite (chế độ Graphics)
+    private final RenderAssetKey spriteKey; // khóa sprite (chế độ Graphics)
     private final boolean   isPriority;    // cần vẽ đèn nháy?
     private final boolean   sirenFlash;    // trạng thái nháy đèn hiện tại
     private final boolean   isStopped;
@@ -38,7 +39,7 @@ public final class RenderableState {
         this.basicLabel  = b.basicLabel;
         this.bodyColor   = b.bodyColor;
         this.roofColor   = b.roofColor;
-        this.spritePath  = b.spritePath;
+        this.spriteKey   = b.spriteKey;
         this.isPriority  = b.isPriority;
         this.sirenFlash  = b.sirenFlash;
         this.isStopped   = b.isStopped;
@@ -55,7 +56,7 @@ public final class RenderableState {
     public String   getBasicLabel()  { return basicLabel;  }
     public Color    getBodyColor()   { return bodyColor;   }
     public Color    getRoofColor()   { return roofColor;   }
-    public String   getSpritePath()  { return spritePath;  }
+    public RenderAssetKey getSpriteKey() { return spriteKey; } 
     public boolean  isPriority()     { return isPriority;  }
     public boolean  isSirenFlash()   { return sirenFlash;  }
     public boolean  isStopped()      { return isStopped;   }
@@ -76,7 +77,7 @@ public final class RenderableState {
         private String   basicLabel = "?";
         private Color    bodyColor  = java.awt.Color.GRAY;
         private Color    roofColor  = java.awt.Color.DARK_GRAY;
-        private String   spritePath = "";
+        private RenderAssetKey spriteKey = null;
         private boolean  isPriority = false;
         private boolean  sirenFlash = false;
         private boolean  isStopped  = false;
@@ -93,7 +94,7 @@ public final class RenderableState {
         public Builder basicLabel(String v)    { basicLabel  = v; return this; }
         public Builder bodyColor(Color v)      { bodyColor   = v; return this; }
         public Builder roofColor(Color v)      { roofColor   = v; return this; }
-        public Builder spritePath(String v)    { spritePath  = v; return this; }
+        public Builder spriteKey(RenderAssetKey v) { spriteKey = v; return this; }
         public Builder isPriority(boolean v)   { isPriority  = v; return this; }
         public Builder sirenFlash(boolean v)   { sirenFlash  = v; return this; }
         public Builder isStopped(boolean v)    { isStopped   = v; return this; }

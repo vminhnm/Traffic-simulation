@@ -1,5 +1,6 @@
 package core.rule;
 
+<<<<<<< HEAD
 import java.awt.geom.AffineTransform;
 import java.awt.geom.Area;
 import java.awt.geom.Path2D;
@@ -9,12 +10,27 @@ import java.util.Optional;
 
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
+=======
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
 import core.trafficlight.TrafficLight;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
 import util.Vector2D;
+<<<<<<< HEAD
+=======
+import core.driver.DriverBehavior;
+import core.road.VehiclePath;
+
+import java.awt.geom.AffineTransform;
+import java.awt.geom.Area;
+import java.awt.geom.Path2D;
+import java.awt.geom.Rectangle2D;
+
+import java.util.Comparator;
+import java.util.Optional;
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 
 /**
  * <b>Bộ đánh giá luật giao thông.</b>
@@ -169,6 +185,7 @@ public final class TrafficRuleEvaluator {
                 .map(v -> (PriorityVehicle) v)
                 .anyMatch(pv -> {
                     double dist = pv.getPosition().distanceTo(self.getPosition());
+<<<<<<< HEAD
                     if (dist > pv.getSirenRadius()) return false;
 
                     // Lấy hướng di chuyển của xe hiện tại (nếu đứng yên thì lấy theo path)
@@ -204,6 +221,9 @@ public final class TrafficRuleEvaluator {
                     }
 
                     return true;
+=======
+                    return dist <= pv.getSirenRadius();
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
                 });
     }
 
@@ -227,6 +247,7 @@ public final class TrafficRuleEvaluator {
      * Kiểm tra xem hai xe có đang va chạm vật lý không (có tính đến góc xoay).
      */
     public boolean isColliding(Vehicle v1, Vehicle v2) {
+<<<<<<< HEAD
         // 1. Lọc nhanh: Bỏ qua tốn kém toán học nếu 2 xe ở quá xa nhau
         double dist = v1.getPosition().distanceTo(v2.getPosition());
         if (dist > (v1.getLength() + v2.getLength())) return false;
@@ -241,6 +262,8 @@ public final class TrafficRuleEvaluator {
             }
         }
 
+=======
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
         Area area1 = getBoundingBox(v1);
         Area area2 = getBoundingBox(v2);
         
@@ -248,6 +271,7 @@ public final class TrafficRuleEvaluator {
         return !area1.isEmpty(); // Nếu không rỗng nghĩa là có phần giao nhau (va chạm)
     }
 
+<<<<<<< HEAD
     private Vector2D getExpectedDirection(Vehicle v) {
         Vector2D dir = v.getVelocity();
         if (dir.length() < 1e-9) { // Nếu xe đang dừng đèn đỏ (velocity = 0), lấy hướng dựa vào waypoint tiếp theo
@@ -267,6 +291,12 @@ public final class TrafficRuleEvaluator {
         // Tạo hình chữ nhật với tâm ở (0, 0)
         Rectangle2D.Double rect = new Rectangle2D.Double(
                 -hitboxLength / 2, -hitboxWidth / 2, hitboxLength, hitboxWidth);
+=======
+    private Area getBoundingBox(Vehicle v) {
+        // Tạo hình chữ nhật với tâm ở (0, 0)
+        Rectangle2D.Double rect = new Rectangle2D.Double(
+                -v.getLength() / 2, -v.getWidth() / 2, v.getLength(), v.getWidth());
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
         // Tịnh tiến và xoay
         AffineTransform transform = new AffineTransform();
         transform.translate(v.getPosition().x, v.getPosition().y);

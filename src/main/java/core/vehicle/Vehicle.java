@@ -1,10 +1,11 @@
 package core.vehicle;
 
+import java.util.List;
+
 import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
 import core.simulation.SimulationWorld;
-import java.util.List;
 import util.Vector2D;
 
 /**
@@ -148,12 +149,15 @@ public abstract class Vehicle implements Movable {
      * Lớp con có thể ghi đè để thêm hành vi đặc biệt (ví dụ
      * EmergencyDriver bỏ qua giới hạn tốc độ).
      */
+    private double stoppedTimer = 0;
+    private static final double HORN_DELAY = 5.0; // giây dừng trước khi bấm còi
     protected void applyDecision(DrivingDecision decision, double deltaTime) {
         stopped  = false;
         yielding = false;
 
         switch (decision.getAction()) {
             case ACCELERATE, EMERGENCY_PASS -> {
+                stoppedTimer = 0; // reset
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 currentSpeed = Math.min(currentSpeed, maxSpeed * speedMultiplier());
@@ -163,14 +167,21 @@ public abstract class Vehicle implements Movable {
                 else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
             }
             case BRAKE -> {
+                stoppedTimer = 0;
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
             }
             case STOP -> {
                 currentSpeed = 0;
                 stopped      = true;
+                stoppedTimer += deltaTime; // ← chỉ đếm khi dừng hẳn
+                if (stoppedTimer >= HORN_DELAY) {
+                    sound.SoundManager.play(sound.SoundType.HORN_SHORT);
+                    stoppedTimer = -999; // reset để không phát liên tục
+                }
             }
             case YIELD -> {
+                stoppedTimer = 0;
                 currentSpeed = Math.max(currentSpeed - acceleration * deltaTime, 0);
                 yielding     = true;
                 // Xe dạt sang lề phải để nhường đường cho xe ưu tiên
@@ -218,7 +229,14 @@ public abstract class Vehicle implements Movable {
             position = target;
             waypointIndex++;
             if (waypointIndex < waypoints.size()) {
+                double oldRotation = rotation; // lưu góc cũ
                 rotation = computeRotationToNext();
+                 // Phát tiếng xi nhan khi rẽ > 20°
+                double angleDiff = Math.abs(rotation - oldRotation);
+                if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
+                if (angleDiff > Math.toRadians(20)) {
+                    sound.SoundManager.play(sound.SoundType.TURN_SIGNAL);
+                }
             } else {
                 finished = true;
             }
@@ -284,7 +302,7 @@ public abstract class Vehicle implements Movable {
                 .basicLabel(profile.getBasicLabel())
                 .bodyColor(profile.getBodyColor())
                 .roofColor(profile.getRoofColor())
-                .spritePath(profile.getSpritePath())
+                .spriteKey(profile.getSpriteKey())
                 .isPriority(isPriorityVehicle())
                 .sirenFlash(flashState && isPriorityVehicle())
                 .isStopped(stopped)

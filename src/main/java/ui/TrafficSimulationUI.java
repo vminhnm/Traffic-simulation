@@ -20,6 +20,8 @@ import core.trafficlight.TrafficLight;
 import core.vehicle.Vehicle;
 import core.vehicle.VehicleFactory;
 import graphics.renderer.RenderMode;
+import graphics.sprite.RenderAssetKey;
+import graphics.sprite.SpriteLoader;
 import javafx.animation.AnimationTimer;
 import javafx.application.Application;
 import javafx.application.Platform;
@@ -38,6 +40,7 @@ import javafx.scene.control.TextArea;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.ToggleGroup;
 import javafx.scene.effect.Glow;
+import javafx.scene.image.Image;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
@@ -48,6 +51,8 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import sound.SoundManager;
+import sound.SoundType;
 import util.Vector2D;
 
 public class TrafficSimulationUI extends Application {
@@ -122,6 +127,8 @@ public class TrafficSimulationUI extends Application {
 
     @Override
     public void start(Stage stage) {
+        SpriteLoader.preloadAll();
+        SoundManager.preloadAll();
         stage.setTitle("🚦 Traffic Simulation — Mô phỏng Giao thông");
         initWorld();
 
@@ -139,6 +146,7 @@ public class TrafficSimulationUI extends Application {
 
         startGameLoop();
         engine.start();
+        SoundManager.loop(SoundType.TRAFFIC_AMBIENCE);
         log("✅ Mô phỏng khởi động — chế độ: " + modeName(currentMode));
     }
 
@@ -421,6 +429,33 @@ public class TrafficSimulationUI extends Application {
             btnAdd
         );
         panel.getChildren().add(separator());
+        // ── Âm thanh ──────────────────────────────────────────────
+        panel.getChildren().add(sectionLbl("🔊 Âm thanh"));
+
+        // Nút mute
+        ToggleButton btnMute = new ToggleButton("🔊 Bật tiếng");
+        btnMute.setSelected(false);
+        btnMute.setStyle(toggleStyle(false));
+        btnMute.setMaxWidth(Double.MAX_VALUE);
+        btnMute.selectedProperty().addListener((obs, oldVal, muted) -> {
+            SoundManager.setMuted(muted);
+            btnMute.setText(muted ? "🔇 Tắt tiếng" : "🔊 Bật tiếng");
+            btnMute.setStyle(toggleStyle(!muted));
+            log(muted ? "🔇 Tắt tiếng." : "🔊 Bật tiếng.");
+         });
+
+        // Slider volume
+        Label volLbl = smallLbl("🔉 Âm lượng: 70%");
+        Slider sldVol = new Slider(0, 1.0, 0.7);
+        styleSlider(sldVol);
+        sldVol.valueProperty().addListener((obs, oldVal, nv) -> {
+            SoundManager.setMasterVolume(nv.doubleValue());
+            volLbl.setText(String.format("🔉 Âm lượng: %.0f%%", nv.doubleValue() * 100));
+        });
+
+        panel.getChildren().addAll(btnMute, volLbl, sldVol);
+        panel.getChildren().add(separator());
+
 
         // ── Log ───────────────────────────────────────────────────
         panel.getChildren().add(sectionLbl("📝 Nhật ký"));
@@ -506,6 +541,7 @@ public class TrafficSimulationUI extends Application {
     private void handleCollisionEvents(List<CollisionEvent> events) {
         for (CollisionEvent event : events) {
             totalCollisions.incrementAndGet();
+            SoundManager.play(SoundType.CRASH);
             collisionEffects.add(new CollisionEffect(event.getPosition(), 0.9));
 
             Vehicle a = event.getFirst();
@@ -632,11 +668,13 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, cx, cy+ROAD_HALF, cx, CANVAS_H);
         drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
+        
         drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-40, lightNS);
         drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6,  lightNS);
         drawLight(g, cx+ROAD_HALF+10, cy+ROAD_HALF+6,  lightEW);
         drawLight(g, cx-ROAD_HALF-26, cy-ROAD_HALF-48, lightEW);
         drawLight(g, cx+ROAD_HALF+96, cy-ROAD_HALF-126, lightNE);
+    
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("5-WAY INTERSECTION", cx-65, CANVAS_H-18);
     }
@@ -726,9 +764,6 @@ public class TrafficSimulationUI extends Application {
         }
     }
 
-    private void drawLight(GraphicsContext g, double x, double y, LightColor color) {
-        drawLightBody(g, x, y, color);
-    }
 
     private void drawLight(GraphicsContext g, double x, double y, SimpleTrafficLight light) {
         lightClickTargets.add(new LightClickTarget(x, y, 15, 42, light));
@@ -765,7 +800,6 @@ public class TrafficSimulationUI extends Application {
         double x=s.getPosition().x, y=s.getPosition().y;
         g.save();
         g.translate(x,y);
-        g.rotate(Math.toDegrees(s.getRotation()));
         double scale = currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
         g.scale(scale, scale);
 
@@ -779,7 +813,11 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority() && s.isSirenFlash()) {
             g.setFill(Color.web("#fef3c7",0.25)); g.fillOval(-s.getLength(),-s.getLength(),s.getLength()*2,s.getLength()*2);
         }
+<<<<<<< HEAD
 
+=======
+        /* 
+>>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
         java.awt.Color ac = s.getBodyColor();
         g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
         g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
@@ -801,7 +839,25 @@ public class TrafficSimulationUI extends Application {
             g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
             g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
         }
+<<<<<<< HEAD
 
+=======
+        */
+        //Image sprite = SpriteLoader.get(s.getSpriteKey());
+        RenderAssetKey dirKey = getSpriteKey(s.getSpriteKey(), s.getRotation());
+        Image sprite = SpriteLoader.get(dirKey);
+        if (sprite != null) {
+            double imgRatio = sprite.getHeight() / sprite.getWidth();
+            double drawW = s.getLength();
+            double drawH = drawW * imgRatio;
+            g.drawImage(sprite, -drawW/2, -drawH/2, drawW, drawH);
+        } else {
+            // Fallback: vẽ hình chữ nhật nếu không có ảnh
+            java.awt.Color ac = s.getBodyColor();
+            g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
+            g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
+        }
+        
         if (s.isYielding()) { g.setStroke(Color.ORANGE); g.setLineWidth(2);
             g.strokeRoundRect(-s.getLength()/2-2,-s.getWidth()/2-2,s.getLength()+4,s.getWidth()+4,5,5); }
         if (s.isStopped() && !s.isYielding()) {
@@ -809,12 +865,45 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority()) {
             g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
             g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }
+<<<<<<< HEAD
 
         if (renderMode == RenderMode.BASIC) {
             g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
             g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
         }
         g.restore();
+    }
+
+=======
+            /* 
+        if (renderMode == RenderMode.BASIC) {
+            g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
+            g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
+        }*/
+        g.restore();
+    }
+
+    private RenderAssetKey getSpriteKey(RenderAssetKey base, double rotation) {
+        double deg = Math.toDegrees(rotation) % 360;
+        if (deg < 0) deg += 360;
+
+        String dir;
+        if      (deg >= 337.5 || deg < 22.5)  dir = "_EAST";
+        else if (deg >= 22.5  && deg < 67.5)  dir = "_SOUTHEAST";
+        else if (deg >= 67.5  && deg < 112.5) dir = "_SOUTH";
+        else if (deg >= 112.5 && deg < 157.5) dir = "_SOUTHWEST";
+        else if (deg >= 157.5 && deg < 202.5) dir = "_WEST";
+        else if (deg >= 202.5 && deg < 247.5) dir = "_NORTHWEST";
+        else if (deg >= 247.5 && deg < 292.5) dir = "_NORTH";
+        else                                   dir = "_NORTHEAST";
+
+        String baseName = base.name().replaceAll("_(EAST|NORTH|SOUTH|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|TOP)$", "");
+
+        try {
+            return RenderAssetKey.valueOf(baseName + dir);
+        } catch (IllegalArgumentException e) {
+            return base;
+        }
     }
 
     private void drawHitbox(GraphicsContext g, Vehicle v) {
@@ -931,6 +1020,12 @@ public class TrafficSimulationUI extends Application {
             spawnTimes.put(v.getId(), simTime);
             totalSpawned.incrementAndGet();
             log("🚗 " + type + " [" + v.getId() + "] " + path.getEntryArm() + "→" + path.getExitArm());
+            switch (type) {
+            case "bicycle"   -> SoundManager.play(SoundType.BICYCLE_BELL);
+            case "ambulance" -> SoundManager.loop(SoundType.AMBULANCE_SIREN);
+            case "firetruck" -> SoundManager.loop(SoundType.FIRE_TRUCK_SIREN);
+            }
+
         } catch (Exception ex) {
             log("⚠ Lỗi: " + ex.getMessage());
         }
@@ -944,6 +1039,20 @@ public class TrafficSimulationUI extends Application {
                 totalFinished.incrementAndGet();
                 Double spawnedAt = spawnTimes.remove(v.getId());
                 if (spawnedAt != null) totalTravelTime += Math.max(0, simTime - spawnedAt);
+                 // ── Dừng siren khi xe ưu tiên finished ───────────
+            if (v instanceof core.vehicle.Ambulance) {
+                // Chỉ dừng nếu không còn xe cứu thương nào khác
+                boolean stillHas = world.getVehicles().stream()
+                    .filter(x -> x != v)
+                    .anyMatch(x -> x instanceof core.vehicle.Ambulance);
+                if (!stillHas) SoundManager.stop(SoundType.AMBULANCE_SIREN);
+            }
+            if (v instanceof core.vehicle.FireTruck) {
+                boolean stillHas = world.getVehicles().stream()
+                    .filter(x -> x != v)
+                    .anyMatch(x -> x instanceof core.vehicle.FireTruck);
+                if (!stillHas) SoundManager.stop(SoundType.FIRE_TRUCK_SIREN);
+            }
             } else if (v.isCrashed()) {
                 double remaining = crashedDisplayTimers.getOrDefault(v.getId(), CRASH_DISPLAY_SECONDS);
                 remaining -= deltaTime;
@@ -1086,8 +1195,20 @@ public class TrafficSimulationUI extends Application {
     //  Controls
     // ══════════════════════════════════════════════════════════════
     private void togglePause() {
-        if (engine.isRunning()) { engine.pause(); btnStartPause.setText("▶ Tiếp tục"); log("⏸ Tạm dừng."); }
-        else { engine.resume(); lastNano=0; btnStartPause.setText("⏸ Tạm dừng"); log("▶ Tiếp tục."); }
+        if (engine.isRunning()) { engine.pause(); btnStartPause.setText("▶ Tiếp tục"); log("⏸ Tạm dừng.");
+            SoundManager.pauseAll();
+         }
+        else { engine.resume(); lastNano=0; btnStartPause.setText("⏸ Tạm dừng"); log("▶ Tiếp tục."); 
+            // Resume ambience
+            SoundManager.loop(SoundType.TRAFFIC_AMBIENCE);
+            // Resume siren nếu vẫn còn xe ưu tiên trên đường
+            boolean hasAmbulance = world.getVehicles().stream()
+                .anyMatch(v -> v instanceof core.vehicle.Ambulance);
+            boolean hasFireTruck = world.getVehicles().stream()
+                .anyMatch(v -> v instanceof core.vehicle.FireTruck);
+            if (hasAmbulance) SoundManager.loop(SoundType.AMBULANCE_SIREN);
+            if (hasFireTruck) SoundManager.loop(SoundType.FIRE_TRUCK_SIREN);
+        }
     }
 
     private void handleCanvasClick(double x, double y) {
