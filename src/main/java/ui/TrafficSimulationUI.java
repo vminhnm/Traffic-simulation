@@ -612,10 +612,10 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
         drawRoadEdges4Way(g, cx, cy);
         drawZebra4Way(g, cx, cy);
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS); // N
-        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS); // S
-        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW); // E
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW); // W
+        drawLight(g, cx+ROAD_HALF+10, cy-ROAD_HALF-48, lightNS); // N
+        drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6,  lightNS); // S
+        drawLight(g, cx+ROAD_HALF+10, cy+ROAD_HALF+6,  lightEW); // E
+        drawLight(g, cx-ROAD_HALF-22, cy-ROAD_HALF-48, lightEW); // W
     }
 
     // ── Three-way (T-junction): roads from N, S, W — no East arm ──
@@ -640,9 +640,9 @@ public class TrafficSimulationUI extends Application {
         g.strokeLine(0, cy-ROAD_HALF, cx-ROAD_HALF, cy-ROAD_HALF);
         g.strokeLine(0, cy+ROAD_HALF, cx-ROAD_HALF, cy+ROAD_HALF);
         // lights
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS);
-        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4, lightNS);
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW);
+        drawLight(g, cx+ROAD_HALF+10,  cy-ROAD_HALF-48, lightNS);
+        drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6, lightNS);
+        drawLight(g, cx-ROAD_HALF-22, cy-ROAD_HALF-48, lightEW);
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("T-JUNCTION", cx-40, CANVAS_H-18);
     }
@@ -669,11 +669,11 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
         
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-40, lightNS);
+        drawLight(g, cx+ROAD_HALF+10, cy-ROAD_HALF-48, lightNS);
         drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6,  lightNS);
         drawLight(g, cx+ROAD_HALF+10, cy+ROAD_HALF+6,  lightEW);
-        drawLight(g, cx-ROAD_HALF-26, cy-ROAD_HALF-48, lightEW);
-        drawLight(g, cx+ROAD_HALF+96, cy-ROAD_HALF-126, lightNE);
+        drawLight(g, cx-ROAD_HALF-22, cy-ROAD_HALF-48, lightEW);
+        drawLight(g, cx+ROAD_HALF+10, cy-ROAD_HALF-145, lightNE);
     
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("5-WAY INTERSECTION", cx-65, CANVAS_H-18);
@@ -808,8 +808,24 @@ public class TrafficSimulationUI extends Application {
         g.scale(scale, scale);
 
         if (s.isCrashed()) {
-            g.setFill(Color.web("#374151")); g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),4,4);
-            g.setFill(Color.web("#ef4444")); g.setFont(Font.font(10)); g.fillText("✕",-4,4);
+            //gray square with red X
+            /*g.setFill(Color.web("#374151")); g.fillRoundRect(-s.getLength()/2, -s.getWidth()/2, s.getLength(), s.getWidth(), 4, 4);
+            g.setFill(Color.web("#ef4444")); 
+            g.setFont(Font.font(10)); 
+            g.fillText("X", -4, 4);*/
+            
+            // explosion.png
+            var explosionStream = TrafficSimulationUI.class.getResourceAsStream("/assets/sprites/explosion.png");
+            Image explosion = explosionStream == null ? null : new Image(explosionStream);
+            if (explosion != null) {
+                double drawW = s.getLength();
+                double drawH = s.getWidth();
+                g.drawImage(explosion, -drawW/2, -drawH/2, drawW, drawH);
+            } else {
+                // fallback: gray square
+                g.setFill(Color.web("#374151"));
+                g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),4,4);
+            }
             g.restore(); return;
         }
 
@@ -857,8 +873,19 @@ public class TrafficSimulationUI extends Application {
         
         if (s.isYielding()) { g.setStroke(Color.ORANGE); g.setLineWidth(2);
             g.strokeRoundRect(-s.getLength()/2-2,-s.getWidth()/2-2,s.getLength()+4,s.getWidth()+4,5,5); }
+        
+        // red square when stopped (except if yielding, which is a different state)
         if (s.isStopped() && !s.isYielding()) {
-            g.setFill(Color.web("#ef4444",0.8)); g.fillRect(-s.getLength()/2-5,-2,4,4); }
+            g.setFill(Color.web("#ef4444", 0.8));
+            double dirX = Math.cos(s.getRotation());
+            double dirY = Math.sin(s.getRotation());
+            
+            double markerOffset = s.getLength() / 2.0 + 0.2;
+            double markerX = -dirX * markerOffset;
+            double markerY = -dirY * markerOffset;
+            g.fillRect(markerX, markerY, 4, 4);
+        }
+
         if (s.isPriority()) {
             g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
             g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }

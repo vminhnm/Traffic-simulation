@@ -34,8 +34,9 @@ public class Bus extends Vehicle {
                 .spriteKey(RenderAssetKey.BUS_EAST)
                 .defaultMaxSpeed(65)
                 .defaultAcceleration(22)
-                .defaultLength(60)
+                .defaultLength(50)
                 .defaultWidth(18)
+                .defaultRenderLength(60)
                 .engineSound(SoundType.ENGINE_BUS)
                 .hornSound(SoundType.HORN_LONG)
                 .build();
