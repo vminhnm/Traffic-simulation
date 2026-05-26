@@ -117,7 +117,7 @@ public final class TrafficRuleEvaluator {
      */
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
         String pathId = self.getPath().getId();
-        Vector2D pos  = self.getPosition();
+        Vector2D pos  = self.getEffectivePosition();
 
         return world.getVehicles().stream()
                 .filter(v -> v != self)
@@ -126,9 +126,9 @@ public final class TrafficRuleEvaluator {
                 // hoặc gần hơn stop-line.
                 .filter(v -> v.getWaypointIndex() >= self.getWaypointIndex())
                 .filter(v -> isAheadOnPath(self, v))
-                .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
                 .map(front -> {
-                    double centerDist = front.getPosition().distanceTo(pos);
+                    double centerDist = front.getEffectivePosition().distanceTo(pos);
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
@@ -149,7 +149,7 @@ public final class TrafficRuleEvaluator {
                 return false;
             }
         }
-        Vector2D toOther = other.getPosition().subtract(self.getPosition());
+        Vector2D toOther = other.getEffectivePosition().subtract(self.getEffectivePosition());
         return dir.normalize().dot(toOther.normalize()) > 0.5;
     }
 
@@ -207,7 +207,8 @@ public final class TrafficRuleEvaluator {
                 -v.getLength() / 2, -v.getWidth() / 2, v.getLength(), v.getWidth());
         // Tịnh tiến và xoay
         AffineTransform transform = new AffineTransform();
-        transform.translate(v.getPosition().x, v.getPosition().y);
+        Vector2D center = v.getEffectivePosition();
+        transform.translate(center.x, center.y);
         transform.rotate(v.getRotation());
         return new Area(new Path2D.Double(rect, transform));
     }

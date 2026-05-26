@@ -289,10 +289,7 @@ public abstract class Vehicle implements Movable {
      * đều chạy trên {@link RenderableState}, không trực tiếp trên Vehicle.
      */
     public RenderableState toRenderableState() {
-        // Tính toán tọa độ vẽ có áp dụng độ dạt ngang (lateralOffset)
-        // Dùng vector vuông góc với hướng di chuyển hiện tại
-        Vector2D rightVector = new Vector2D(Math.cos(rotation + Math.PI/2), Math.sin(rotation + Math.PI/2));
-        Vector2D renderPos = position.add(rightVector.multiply(lateralOffset));
+        Vector2D renderPos = getEffectivePosition();
 
         return RenderableState.builder(id)
                 .position(renderPos)
@@ -327,6 +324,10 @@ public abstract class Vehicle implements Movable {
 
     public String         getId()             { return id;             }
     public Vector2D       getPosition()       { return position;       }
+    public Vector2D       getEffectivePosition() {
+        Vector2D rightVector = new Vector2D(Math.cos(rotation + Math.PI/2), Math.sin(rotation + Math.PI/2));
+        return position.add(rightVector.multiply(lateralOffset));
+    }
     public double         getRotation()       { return rotation;       }
     public double         getLength()         { return length;         }
     public double         getWidth()          { return width;          }

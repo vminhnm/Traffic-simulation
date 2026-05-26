@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import core.driver.AggressiveDriver;
@@ -109,6 +110,7 @@ public class TrafficSimulationUI extends Application {
     private int      spawnRR       = 0;
     private int      dirRR         = 0;
     private int      laneRR        = 0;
+    private final Random random = new Random();
     private static final String[] AUTO_TYPES =
         {"car","car","car","car","motorbike","motorbike","bus","truck","bicycle","car","car","car"};
 
@@ -198,8 +200,8 @@ public class TrafficSimulationUI extends Application {
         spawnAt("bus", makeThreeWayPath(2), 0);
     }
     private void seedFiveWay() {
-        for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i), 0);
-        spawnAt("ambulance", makeFiveWayPath(4), 0);
+        for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i, 0), 0);
+        spawnAt("ambulance", makeFiveWayPath(9, 0), 0);
     }
     private void seedGrid() {
         spawnAt("car", makeGridPath(0), 0);
@@ -477,10 +479,23 @@ public class TrafficSimulationUI extends Application {
     private void rebuildDirCombo(ComboBox<String> cb) {
         cb.getItems().clear();
         switch (currentMode) {
-            case FOUR_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông");
+            case FOUR_WAY -> cb.getItems().addAll(
+                "⬇ Bắc→Nam","↱ Bắc→Đông","↰ Bắc→Tây",
+                "⬆ Nam→Bắc","↱ Nam→Đông","↰ Nam→Tây",
+                "⬅ Đông→Tây","↱ Đông→Bắc","↰ Đông→Nam",
+                "➡ Tây→Đông","↱ Tây→Nam","↰ Tây→Bắc");
             case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam");
-            case FIVE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","⬅ Đông→Tây","➡ Tây→Đông","↙ Đông-Bắc→Tây");
-            case GRID -> cb.getItems().addAll("⬇ Cột trái","⬆ Cột giữa","⬇ Cột phải","➡ Hàng trên","⬅ Hàng giữa","➡ Hàng dưới");
+            case FIVE_WAY -> cb.getItems().addAll(
+                "⬇ Bắc→Nam","↱ Bắc→Đông","↗ Bắc→Đông-Bắc",
+                "⬆ Nam→Bắc","↰ Nam→Tây",
+                "⬅ Đông→Tây","↱ Đông→Bắc",
+                "➡ Tây→Đông","↳ Tây→Nam",
+                "↙ Đông-Bắc→Tây","↙ Đông-Bắc→Nam","↙ Đông-Bắc→Bắc");
+            case GRID -> cb.getItems().addAll(
+                "⬇ Cột trái","⬆ Cột giữa","⬇ Cột phải",
+                "➡ Hàng trên","⬅ Hàng giữa","➡ Hàng dưới",
+                "↱ Trái→Xuống","↰ Trái→Lên","↳ Trên→Phải",
+                "↲ Trên→Trái","↱ Phải→Lên","↳ Phải→Xuống");
         }
         cb.setValue(cb.getItems().get(0));
     }
@@ -700,9 +715,8 @@ public class TrafficSimulationUI extends Application {
                 double x = gapX*(col+1), y = gapY*(row+1);
                 g.setFill(Color.web("#4b5563"));
                 g.fillRect(x-ROAD_HALF*0.7, y-ROAD_HALF*0.7, ROAD_HALF*1.4, ROAD_HALF*1.4);
-                // traffic lights at each intersection (alternate)
-                SimpleTrafficLight lt = ((col+row)%2==0) ? lightNS : lightEW;
-                drawLight(g, x+ROAD_HALF*0.7+2, y-ROAD_HALF*0.7-28, lt);
+                drawLight(g, x+ROAD_HALF*0.7+2, y-ROAD_HALF*0.7-28, lightNS);
+                drawLight(g, x-ROAD_HALF*0.7-20, y+ROAD_HALF*0.7-14, lightEW);
             }
         }
         // lane centers
@@ -981,16 +995,17 @@ public class TrafficSimulationUI extends Application {
     //  Spawning
     // ══════════════════════════════════════════════════════════════
     private void autoSpawn() {
-        String type = AUTO_TYPES[spawnRR++ % AUTO_TYPES.length];
-        VehiclePath path = getPathByModeAndDir(dirRR++ % dirCountForMode());
+        String type = AUTO_TYPES[random.nextInt(AUTO_TYPES.length)];
+        VehiclePath path = getPathByModeAndDir(random.nextInt(dirCountForMode()));
         doSpawn(type, path, null);
     }
 
     private int dirCountForMode() {
         return switch (currentMode) {
-            case THREE_WAY, FOUR_WAY -> 4;
-            case FIVE_WAY -> 5;
-            case GRID -> 6;
+            case THREE_WAY -> 4;
+            case FOUR_WAY -> 12;
+            case FIVE_WAY -> 12;
+            case GRID -> 12;
         };
     }
 
@@ -1062,6 +1077,7 @@ public class TrafficSimulationUI extends Application {
     private double cx() { return CANVAS_W/2.0; }
     private double cy() { return CANVAS_H/2.0; }
     private int nextLane() { return laneRR++ % 2; }
+    private int randomLane() { return random.nextInt(2); }
     private double laneOffset(int lane) { return LANE_W / 2.0 + Math.min(Math.max(lane, 0), 1) * LANE_W; }
 
     // ── 4-way ─────────────────────────────────────────────────────
@@ -1088,6 +1104,48 @@ public class TrafficSimulationUI extends Application {
         return new VehiclePath("we"+lane, List.of(
             new Vector2D(-20,y), new Vector2D(cx()-ROAD_HALF-10,y),
             new Vector2D(cx(),y), new Vector2D(CANVAS_W+20,y)), 1,"light-EW","W","E");
+    }
+
+    private VehiclePath makeFourWayPath(int idx, int lane) {
+        double cx = cx(), cy = cy(), lo = laneOffset(lane);
+        return switch (idx % 12) {
+            case 0 -> makeNorthSouthPath(lane);
+            case 1 -> new VehiclePath("n-e" + lane, List.of(
+                new Vector2D(cx + lo, -20), new Vector2D(cx + lo, cy - ROAD_HALF - 10),
+                new Vector2D(cx + lo, cy - lo), new Vector2D(cx + ROAD_HALF + 10, cy - lo),
+                new Vector2D(CANVAS_W + 20, cy - lo)), 1, "light-NS", "N", "E");
+            case 2 -> new VehiclePath("n-w" + lane, List.of(
+                new Vector2D(cx + lo, -20), new Vector2D(cx + lo, cy - ROAD_HALF - 10),
+                new Vector2D(cx + lo, cy + lo), new Vector2D(cx - ROAD_HALF - 10, cy + lo),
+                new Vector2D(-20, cy + lo)), 1, "light-NS", "N", "W");
+            case 3 -> makeSouthNorthPath(lane);
+            case 4 -> new VehiclePath("s-e" + lane, List.of(
+                new Vector2D(cx - lo, CANVAS_H + 20), new Vector2D(cx - lo, cy + ROAD_HALF + 10),
+                new Vector2D(cx - lo, cy - lo), new Vector2D(cx + ROAD_HALF + 10, cy - lo),
+                new Vector2D(CANVAS_W + 20, cy - lo)), 1, "light-NS", "S", "E");
+            case 5 -> new VehiclePath("s-w" + lane, List.of(
+                new Vector2D(cx - lo, CANVAS_H + 20), new Vector2D(cx - lo, cy + ROAD_HALF + 10),
+                new Vector2D(cx - lo, cy + lo), new Vector2D(cx - ROAD_HALF - 10, cy + lo),
+                new Vector2D(-20, cy + lo)), 1, "light-NS", "S", "W");
+            case 6 -> makeEastWestPath(lane);
+            case 7 -> new VehiclePath("e-n" + lane, List.of(
+                new Vector2D(CANVAS_W + 20, cy + lo), new Vector2D(cx + ROAD_HALF + 10, cy + lo),
+                new Vector2D(cx - lo, cy + lo), new Vector2D(cx - lo, cy - ROAD_HALF - 10),
+                new Vector2D(cx - lo, -20)), 1, "light-EW", "E", "N");
+            case 8 -> new VehiclePath("e-s" + lane, List.of(
+                new Vector2D(CANVAS_W + 20, cy + lo), new Vector2D(cx + ROAD_HALF + 10, cy + lo),
+                new Vector2D(cx + lo, cy + lo), new Vector2D(cx + lo, cy + ROAD_HALF + 10),
+                new Vector2D(cx + lo, CANVAS_H + 20)), 1, "light-EW", "E", "S");
+            case 9 -> makeWestEastPath(lane);
+            case 10 -> new VehiclePath("w-s" + lane, List.of(
+                new Vector2D(-20, cy - lo), new Vector2D(cx - ROAD_HALF - 10, cy - lo),
+                new Vector2D(cx + lo, cy - lo), new Vector2D(cx + lo, cy + ROAD_HALF + 10),
+                new Vector2D(cx + lo, CANVAS_H + 20)), 1, "light-EW", "W", "S");
+            default -> new VehiclePath("w-n" + lane, List.of(
+                new Vector2D(-20, cy - lo), new Vector2D(cx - ROAD_HALF - 10, cy - lo),
+                new Vector2D(cx - lo, cy - lo), new Vector2D(cx - lo, cy - ROAD_HALF - 10),
+                new Vector2D(cx - lo, -20)), 1, "light-EW", "W", "N");
+        };
     }
 
     // ── 3-way ─────────────────────────────────────────────────────
@@ -1119,25 +1177,51 @@ public class TrafficSimulationUI extends Application {
 
     // ── 5-way ─────────────────────────────────────────────────────
     private VehiclePath makeFiveWayPath(int idx) {
-        double cx=cx(), cy=cy(), lw=LANE_W/2.0;
-        return switch(idx%5) {
-            case 0 -> makeNorthSouthPath(nextLane());
-            case 1 -> makeSouthNorthPath(nextLane());
-            case 2 -> makeEastWestPath(nextLane());
-            case 3 -> makeWestEastPath(nextLane());
-            default -> new VehiclePath("ne-diag", List.of(
-                new Vector2D(CANVAS_W+20,-20), new Vector2D(cx+ROAD_HALF+130,cy-ROAD_HALF-130),
-                new Vector2D(cx+ROAD_HALF+35,cy-ROAD_HALF-35),
-                new Vector2D(cx,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
-                new Vector2D(-20,cy+lw)), 1,"light-NE","NE","W");
+        return makeFiveWayPath(idx, randomLane());
+    }
+
+    private VehiclePath makeFiveWayPath(int idx, int lane) {
+        double cx=cx(), cy=cy(), lo=laneOffset(lane);
+        return switch(idx%12) {
+            case 0 -> makeNorthSouthPath(lane);
+            case 1 -> makeFourWayPath(1, lane);
+            case 2 -> new VehiclePath("n-ne" + lane, List.of(
+                new Vector2D(cx + lo, -20), new Vector2D(cx + lo, cy - ROAD_HALF - 10),
+                new Vector2D(cx + lo, cy - lo), nePoint(120, -lo), nePoint(610, -lo)),
+                1, "light-NS", "N", "NE");
+            case 3 -> makeSouthNorthPath(lane);
+            case 4 -> makeFourWayPath(5, lane);
+            case 5 -> makeEastWestPath(lane);
+            case 6 -> makeFourWayPath(7, lane);
+            case 7 -> makeWestEastPath(lane);
+            case 8 -> makeFourWayPath(10, lane);
+            case 9 -> new VehiclePath("ne-w" + lane, List.of(
+                nePoint(610, lo), nePoint(220, lo), nePoint(90, lo),
+                new Vector2D(cx - ROAD_HALF - 10, cy + lo), new Vector2D(-20, cy + lo)),
+                1, "light-NE", "NE", "W");
+            case 10 -> new VehiclePath("ne-s" + lane, List.of(
+                nePoint(610, lo), nePoint(220, lo), nePoint(80, lo),
+                new Vector2D(cx + lo, cy + ROAD_HALF + 10), new Vector2D(cx + lo, CANVAS_H + 20)),
+                1, "light-NE", "NE", "S");
+            default -> new VehiclePath("ne-n" + lane, List.of(
+                nePoint(610, lo), nePoint(220, lo), nePoint(80, lo),
+                new Vector2D(cx - lo, cy - ROAD_HALF - 10), new Vector2D(cx - lo, -20)),
+                1, "light-NE", "NE", "N");
         };
+    }
+
+    private Vector2D nePoint(double distanceFromCenter, double laneOffset) {
+        double u = Math.sqrt(0.5);
+        return new Vector2D(
+            cx() + u * distanceFromCenter + u * laneOffset,
+            cy() - u * distanceFromCenter + u * laneOffset);
     }
 
     // ── Grid paths ────────────────────────────────────────────────
     private VehiclePath makeGridPath(int idx) {
         double gx = CANVAS_W/4.0, gy = CANVAS_H/4.0;
         double lane = LANE_W / 2.0;
-        return switch(idx%6) {
+        return switch(idx%12) {
             case 0 -> new VehiclePath("grid-v1", List.of(
                 new Vector2D(gx+lane,-20), new Vector2D(gx+lane,gy-16),
                 new Vector2D(gx+lane,gy+16), new Vector2D(gx+lane,gy*2-16),
@@ -1146,7 +1230,7 @@ public class TrafficSimulationUI extends Application {
                 new Vector2D(gx*2-lane,CANVAS_H+20), new Vector2D(gx*2-lane,gy*3+16),
                 new Vector2D(gx*2-lane,gy*3-16), new Vector2D(gx*2-lane,gy*2+16),
                 new Vector2D(gx*2-lane,gy*2-16), new Vector2D(gx*2-lane,gy+16),
-                new Vector2D(gx*2-lane,gy-16), new Vector2D(gx*2-lane,-20)), 1,"light-EW","S2","N2");
+                new Vector2D(gx*2-lane,gy-16), new Vector2D(gx*2-lane,-20)), 1,"light-NS","S2","N2");
             case 2 -> new VehiclePath("grid-v3", List.of(
                 new Vector2D(gx*3+lane,-20), new Vector2D(gx*3+lane,gy-16),
                 new Vector2D(gx*3+lane,gy+16), new Vector2D(gx*3+lane,gy*2-16),
@@ -1159,22 +1243,45 @@ public class TrafficSimulationUI extends Application {
                 new Vector2D(CANVAS_W+20,gy*2+lane), new Vector2D(gx*3+16,gy*2+lane),
                 new Vector2D(gx*3-16,gy*2+lane), new Vector2D(gx*2+16,gy*2+lane),
                 new Vector2D(gx*2-16,gy*2+lane), new Vector2D(gx-16,gy*2+lane),
-                new Vector2D(-20,gy*2+lane)), 1,"light-NS","E2","W2");
-            default -> new VehiclePath("grid-h3", List.of(
+                new Vector2D(-20,gy*2+lane)), 1,"light-EW","E2","W2");
+            case 5 -> new VehiclePath("grid-h3", List.of(
                 new Vector2D(-20,gy*3-lane), new Vector2D(gx-16,gy*3-lane),
                 new Vector2D(gx+16,gy*3-lane), new Vector2D(gx*2-16,gy*3-lane),
                 new Vector2D(gx*2+16,gy*3-lane), new Vector2D(CANVAS_W+20,gy*3-lane)), 1,"light-EW","W3","E3");
+            case 6 -> new VehiclePath("grid-w1-s", List.of(
+                new Vector2D(-20, gy-lane), new Vector2D(gx-16, gy-lane),
+                new Vector2D(gx+lane, gy-lane), new Vector2D(gx+lane, gy+16),
+                new Vector2D(gx+lane, CANVAS_H+20)), 1,"light-EW","W1","S1");
+            case 7 -> new VehiclePath("grid-w2-n", List.of(
+                new Vector2D(-20, gy*2-lane), new Vector2D(gx-16, gy*2-lane),
+                new Vector2D(gx-lane, gy*2-lane), new Vector2D(gx-lane, gy*2-16),
+                new Vector2D(gx-lane, -20)), 1,"light-EW","W2","N1");
+            case 8 -> new VehiclePath("grid-n2-e", List.of(
+                new Vector2D(gx*2+lane, -20), new Vector2D(gx*2+lane, gy-16),
+                new Vector2D(gx*2+lane, gy-lane), new Vector2D(gx*2+16, gy-lane),
+                new Vector2D(CANVAS_W+20, gy-lane)), 1,"light-NS","N2","E1");
+            case 9 -> new VehiclePath("grid-n3-w", List.of(
+                new Vector2D(gx*3+lane, -20), new Vector2D(gx*3+lane, gy-16),
+                new Vector2D(gx*3+lane, gy+lane), new Vector2D(gx*3-16, gy+lane),
+                new Vector2D(-20, gy+lane)), 1,"light-NS","N3","W1");
+            case 10 -> new VehiclePath("grid-e2-n", List.of(
+                new Vector2D(CANVAS_W+20, gy*2+lane), new Vector2D(gx*3+16, gy*2+lane),
+                new Vector2D(gx*3-lane, gy*2+lane), new Vector2D(gx*3-lane, gy*2-16),
+                new Vector2D(gx*3-lane, -20)), 1,"light-EW","E2","N3");
+            case 11 -> new VehiclePath("grid-e1-s", List.of(
+                new Vector2D(CANVAS_W+20, gy+lane), new Vector2D(gx*3+16, gy+lane),
+                new Vector2D(gx*3+lane, gy+lane), new Vector2D(gx*3+lane, gy+16),
+                new Vector2D(gx*3+lane, CANVAS_H+20)), 1,"light-EW","E1","S3");
+            default -> makeGridPath(0);
         };
     }
 
     private VehiclePath getPathByModeAndDir(int idx) {
         return switch (currentMode) {
-            case FOUR_WAY -> switch(idx%4) {
-                case 0->makeNorthSouthPath(nextLane()); case 1->makeSouthNorthPath(nextLane());
-                case 2->makeEastWestPath(nextLane()); default->makeWestEastPath(nextLane());};
+            case FOUR_WAY -> makeFourWayPath(idx, randomLane());
             case THREE_WAY -> makeThreeWayPath(idx%4);
-            case FIVE_WAY  -> makeFiveWayPath(idx%5);
-            case GRID      -> makeGridPath(idx%6);
+            case FIVE_WAY  -> makeFiveWayPath(idx);
+            case GRID      -> makeGridPath(idx);
         };
     }
 
@@ -1219,6 +1326,7 @@ public class TrafficSimulationUI extends Application {
 
     private void resetSimulation() {
         if (engine!=null) engine.pause();
+        SoundManager.stopAll();
         simTime=0; spawnTimer=0; spawnRR=0; dirRR=0; laneRR=0;
         totalSpawned.set(0); totalFinished.set(0); totalCrashed.set(0); totalCollisions.set(0);
         totalTravelTime = 0;
@@ -1226,6 +1334,7 @@ public class TrafficSimulationUI extends Application {
         initWorld();
         engine = new SimulationEngine(world);
         engine.start(); lastNano=0;
+        SoundManager.loop(SoundType.TRAFFIC_AMBIENCE);
         if (btnStartPause!=null) btnStartPause.setText("⏸ Tạm dừng");
         log("🔄 Đặt lại — chế độ: " + modeName(currentMode));
     }

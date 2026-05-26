@@ -89,7 +89,7 @@ public final class CollisionManager {
 
     private Vector2D midpoint(Vehicle first, Vehicle second) {
         return new Vector2D(
-                (first.getPosition().x + second.getPosition().x) / 2.0,
-                (first.getPosition().y + second.getPosition().y) / 2.0);
+                (first.getEffectivePosition().x + second.getEffectivePosition().x) / 2.0,
+                (first.getEffectivePosition().y + second.getEffectivePosition().y) / 2.0);
     }
 }
