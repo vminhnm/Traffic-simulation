@@ -198,7 +198,10 @@ public class TrafficSimulationUI extends Application {
         spawnAt("bus", makeThreeWayPath(2), 0);
     }
     private void seedFiveWay() {
-        for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i), 0);
+        //for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i), 0);
+        spawnAt("car", makeFiveWayPath(0), 0);
+        spawnAt("car", makeFiveWayPath(2), 0);
+        spawnAt("bus", makeFiveWayPath(3), 0);
         spawnAt("ambulance", makeFiveWayPath(4), 0);
     }
     private void seedGrid() {
