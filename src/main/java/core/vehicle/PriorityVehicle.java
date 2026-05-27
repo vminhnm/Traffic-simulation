@@ -2,6 +2,8 @@ package core.vehicle;
 
 import core.driver.DriverBehavior;
 import core.road.VehiclePath;
+import sound.SoundManager;
+import sound.SoundType;
 
 /**
  * <b>Lớp trừu tượng trung gian cho xe ưu tiên.</b>

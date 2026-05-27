@@ -6,6 +6,12 @@ import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
 import core.simulation.SimulationWorld;
+<<<<<<< HEAD
+=======
+import java.util.List;
+import sound.SoundManager;
+import sound.SoundType;
+>>>>>>> cf0ac8fdd70ff04fb3db369e99db31f25131fda3
 import util.Vector2D;
 
 /**
@@ -70,6 +76,8 @@ public abstract class Vehicle implements Movable {
     protected boolean flashState;
     /** Offset ngang khi vượt xe (px, dương = lệch trái). */
     protected double  lateralOffset;
+    /** Trạng thái âm thanh động cơ (để tránh restart lặp lại). */
+    protected boolean engineSoundPlaying = false;
 
     // ── Cấu hình loại xe ─────────────────────────────────────────────
     private final VehicleProfile profile;
@@ -142,6 +150,9 @@ public abstract class Vehicle implements Movable {
 
         // 4. Cập nhật hiệu ứng phụ
         updateEffects(deltaTime);
+
+        // 5. Cập nhật âm thanh động cơ
+        updateEngineSound();
     }
 
     /**
@@ -295,6 +306,23 @@ public abstract class Vehicle implements Movable {
         if (flashTimer >= 0.5) {
             flashTimer = 0;
             flashState = !flashState;
+        }
+    }
+
+    /** Cập nhật âm thanh động cơ dựa trên tốc độ hiện tại. */
+    protected void updateEngineSound() {
+        SoundType engineSound = profile.getEngineSound();
+        if (engineSound == null) return;
+
+        SoundManager soundManager = SoundManager.getInstance();
+        boolean shouldBeRunning = currentSpeed > 0;
+
+        if (shouldBeRunning && !engineSoundPlaying) {
+            soundManager.loop(engineSound);
+            engineSoundPlaying = true;
+        } else if (!shouldBeRunning && engineSoundPlaying) {
+            soundManager.stop(engineSound);
+            engineSoundPlaying = false;
         }
     }
 
