@@ -51,6 +51,7 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.text.FontWeight;
 import javafx.stage.Stage;
+import javafx.scene.transform.Scale;
 import sound.SoundManager;
 import sound.SoundType;
 import util.Vector2D;
@@ -86,7 +87,9 @@ public class TrafficSimulationUI extends Application {
     private SimpleTrafficLight lightNS, lightEW, lightNE, lightNW, lightSE;
 
     // ── UI refs ────────────────────────────────────────────────────
+    private Stage     primaryStage;
     private Canvas    canvas;
+    private Scale     canvasScale;
     private Label     lblTime, lblFPS;
     private Label     statSpawned, statFinished, statCrashed, statCollisions, statThroughput, statAvgTravel;
     private Button    btnStartPause;
@@ -128,6 +131,7 @@ public class TrafficSimulationUI extends Application {
 
     @Override
     public void start(Stage stage) {
+        this.primaryStage = stage;
         SpriteLoader.preloadAll();
         SoundManager.preloadAll();
         stage.setTitle("🚦 Traffic Simulation — Mô phỏng Giao thông");
@@ -142,7 +146,9 @@ public class TrafficSimulationUI extends Application {
 
         Scene scene = new Scene(root, CANVAS_W + 310, CANVAS_H + 56);
         stage.setScene(scene);
-        stage.setResizable(false);
+        stage.setResizable(true);
+        stage.setMinWidth(CANVAS_W + 310);
+        stage.setMinHeight(CANVAS_H + 56);
         stage.show();
 
         startGameLoop();
@@ -236,15 +242,47 @@ public class TrafficSimulationUI extends Application {
         lblFPS.setFont(Font.font("Segoe UI",FontWeight.BOLD,13));
         lblFPS.setTextFill(Color.web("#64ffda"));
 
-        hb.getChildren().addAll(title, sub, sp, lblFPS);
+        Button btnFs = new Button("⛶ Toàn màn hình");
+        btnFs.setStyle("-fx-background-color:#1e3a5f;-fx-text-fill:#e2e8f0;-fx-font-size:12;" +
+                       "-fx-cursor:hand;-fx-background-radius:6;-fx-padding:5 12;");
+        btnFs.setOnMouseEntered(e -> btnFs.setOpacity(0.8));
+        btnFs.setOnMouseExited (e -> btnFs.setOpacity(1.0));
+        btnFs.setOnAction(e -> {
+            boolean fs = !primaryStage.isFullScreen();
+            primaryStage.setFullScreen(fs);
+            btnFs.setText(fs ? "✕ Thoát toàn màn hình" : "⛶ Toàn màn hình");
+        });
+
+        hb.getChildren().addAll(title, sub, sp, lblFPS, btnFs);
         return hb;
     }
 
     private StackPane buildCanvasArea() {
         canvas = new Canvas(CANVAS_W, CANVAS_H);
         canvas.setOnMouseClicked(e -> handleCanvasClick(e.getX(), e.getY()));
+
+        canvasScale = new Scale(1.0, 1.0, 0, 0);
+        canvas.getTransforms().add(canvasScale);
+
+        // TOP_LEFT alignment so translate is the sole positioning mechanism
         StackPane sp = new StackPane(canvas);
+        sp.setAlignment(Pos.TOP_LEFT);
         sp.setStyle("-fx-background-color: #0d1b2a;");
+
+        javafx.beans.value.ChangeListener<Number> sizeListener = (obs, oldVal, newVal) -> {
+            double availW = sp.getWidth();
+            double availH = sp.getHeight();
+            if (availW <= 0 || availH <= 0) return;
+            double s = Math.min(availW / CANVAS_W, availH / CANVAS_H);
+            canvasScale.setX(s);
+            canvasScale.setY(s);
+            // Centre: (available - scaled_size) / 2
+            canvas.setTranslateX((availW - CANVAS_W * s) / 2.0);
+            canvas.setTranslateY((availH - CANVAS_H * s) / 2.0);
+        };
+        sp.widthProperty() .addListener(sizeListener);
+        sp.heightProperty().addListener(sizeListener);
+
         return sp;
     }
 
@@ -411,8 +449,8 @@ public class TrafficSimulationUI extends Application {
         rebuildDirCombo(cbDir);
 
         ComboBox<String> cbDriver = new ComboBox<>();
-        cbDriver.getItems().addAll("🧑 Normal","😤 Aggressive","🚨 Emergency");
-        cbDriver.setValue("🧑 Normal");
+        cbDriver.getItems().addAll("👍 Normal","😤 Aggressive","🚨 Emergency");
+        cbDriver.setValue("👍 Normal");
         styleCombo(cbDriver);
 
         Button btnAdd = new Button("➕ Thêm xe ngay");
