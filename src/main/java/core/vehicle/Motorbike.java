@@ -35,8 +35,8 @@ public class Motorbike extends Vehicle {
                 .spriteKey(RenderAssetKey.MOTORBIKE_EAST)
                 .defaultMaxSpeed(110)
                 .defaultAcceleration(70)
-                .defaultLength(60)
-                .defaultWidth(40)
+                .defaultLength(34)
+                .defaultWidth(14)
                 .engineSound(SoundType.ENGINE_MOTORBIKE)
                 .hornSound(SoundType.HORN_SHORT)
                 .build();

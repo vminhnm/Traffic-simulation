@@ -34,8 +34,8 @@ public class Bicycle extends Vehicle {
                 .spriteKey(RenderAssetKey.BICYCLE_EAST)
                 .defaultMaxSpeed(35)
                 .defaultAcceleration(20)
-                .defaultLength(50)
-                .defaultWidth(35)
+                .defaultLength(32)
+                .defaultWidth(12)
                 .engineSound(SoundType.BICYCLE_BELL)  // không có động cơ → dùng chuông
                 .hornSound(SoundType.BICYCLE_BELL)
                 .build();

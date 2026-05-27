@@ -111,21 +111,17 @@ public final class TrafficRuleEvaluator {
 
     /**
      * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước
-     * trên cùng đường đi.
+     * trên cùng làn/hướng đi. Xe có thể khác route khi chuẩn bị rẽ, nên
+     * không chỉ so path id.
      *
      * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
      */
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
-        String pathId = self.getPath().getId();
         Vector2D pos  = self.getEffectivePosition();
 
         return world.getVehicles().stream()
                 .filter(v -> v != self)
-                .filter(v -> v.getPath().getId().equals(pathId))
-                // Xe phía trước: đang tiến đến waypoint >= waypoint của self,
-                // hoặc gần hơn stop-line.
-                .filter(v -> v.getWaypointIndex() >= self.getWaypointIndex())
-                .filter(v -> isAheadOnPath(self, v))
+                .filter(v -> isAheadInSameLane(self, v))
                 .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
                 .map(front -> {
                     double centerDist = front.getEffectivePosition().distanceTo(pos);
@@ -135,22 +131,35 @@ public final class TrafficRuleEvaluator {
     }
 
     /**
-     * {@code other} có ở phía trước {@code self} theo hướng di chuyển không?
+     * {@code other} có ở phía trước {@code self} trong cùng làn không?
      */
-    private boolean isAheadOnPath(Vehicle self, Vehicle other) {
-        Vector2D dir      = self.getVelocity();
-        if (dir.length() < 1e-9) {
-            // Xe đứng yên → dùng hướng đến waypoint kế
-            int nextIdx = self.getWaypointIndex();
-            if (nextIdx < self.getPath().getWaypoints().size()) {
-                dir = self.getPath().getWaypoints().get(nextIdx)
-                         .subtract(self.getPosition());
-            } else {
-                return false;
-            }
-        }
+    private boolean isAheadInSameLane(Vehicle self, Vehicle other) {
+        Vector2D dir = movementDirection(self);
+        if (dir.length() < 1e-9) return false;
+
         Vector2D toOther = other.getEffectivePosition().subtract(self.getEffectivePosition());
-        return dir.normalize().dot(toOther.normalize()) > 0.5;
+        double forwardDistance = dir.dot(toOther);
+        if (forwardDistance <= 0) return false;
+
+        Vector2D otherDir = movementDirection(other);
+        if (otherDir.length() >= 1e-9 && dir.dot(otherDir) < 0.5) return false;
+
+        Vector2D lateral = toOther.subtract(dir.multiply(forwardDistance));
+        double sameLaneThreshold = (self.getWidth() + other.getWidth()) / 2.0 + 4.0;
+        return lateral.length() <= sameLaneThreshold;
+    }
+
+    private Vector2D movementDirection(Vehicle vehicle) {
+        Vector2D dir = vehicle.getVelocity();
+        if (dir.length() >= 1e-9) return dir.normalize();
+
+        int nextIdx = vehicle.getWaypointIndex();
+        if (nextIdx < vehicle.getPath().getWaypoints().size()) {
+            return vehicle.getPath().getWaypoints().get(nextIdx)
+                    .subtract(vehicle.getPosition())
+                    .normalize();
+        }
+        return Vector2D.ZERO;
     }
 
     // ─────────────────────────────────────────────────────────────────

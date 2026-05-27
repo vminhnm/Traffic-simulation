@@ -200,8 +200,11 @@ public class TrafficSimulationUI extends Application {
         spawnAt("bus", makeThreeWayPath(2), 0);
     }
     private void seedFiveWay() {
-        for (int i = 0; i < 4; i++) spawnAt("car", makeFiveWayPath(i, 0), 0);
-        spawnAt("ambulance", makeFiveWayPath(9, 0), 0);
+        spawnAt("car", makeFiveWayPath(0, 0), 0);       // N -> S
+        spawnAt("car", makeFiveWayPath(3, 0), 0);       // S -> N
+        spawnAt("car", makeFiveWayPath(5, 0), 0);       // E -> W
+        spawnAt("car", makeFiveWayPath(7, 0), 0);       // W -> E
+        spawnAt("ambulance", makeFiveWayPath(9, 0), 0); // NE -> W
     }
     private void seedGrid() {
         spawnAt("car", makeGridPath(0), 0);
@@ -484,7 +487,7 @@ public class TrafficSimulationUI extends Application {
                 "⬆ Nam→Bắc","↱ Nam→Đông","↰ Nam→Tây",
                 "⬅ Đông→Tây","↱ Đông→Bắc","↰ Đông→Nam",
                 "➡ Tây→Đông","↱ Tây→Nam","↰ Tây→Bắc");
-            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam");
+            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam","↰ Bắc→Tây","↲ Nam→Tây");
             case FIVE_WAY -> cb.getItems().addAll(
                 "⬇ Bắc→Nam","↱ Bắc→Đông","↗ Bắc→Đông-Bắc",
                 "⬆ Nam→Bắc","↰ Nam→Tây",
@@ -627,10 +630,10 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
         drawRoadEdges4Way(g, cx, cy);
         drawZebra4Way(g, cx, cy);
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-36, lightNS); // N
-        drawLight(g, cx-ROAD_HALF-20, cy+ROAD_HALF+4,  lightNS); // S
-        drawLight(g, cx+ROAD_HALF+4,  cy+6,            lightEW); // E
-        drawLight(g, cx-ROAD_HALF-20, cy-ROAD_HALF-36, lightEW); // W
+        drawLight(g, cx + ROAD_HALF + 18, cy - ROAD_HALF - 54, lightNS); // N
+        drawLight(g, cx - ROAD_HALF - 33, cy + ROAD_HALF + 12, lightNS); // S
+        drawLight(g, cx + ROAD_HALF + 18, cy + ROAD_HALF + 12, lightEW); // E
+        drawLight(g, cx - ROAD_HALF - 33, cy - ROAD_HALF - 54, lightEW); // W
     }
 
     // ── Three-way (T-junction): roads from N, S, W — no East arm ──
@@ -684,14 +687,29 @@ public class TrafficSimulationUI extends Application {
         drawLaneCenter(g, 0, cy, cx-ROAD_HALF, cy);
         drawLaneCenter(g, cx+ROAD_HALF, cy, CANVAS_W, cy);
         
-        drawLight(g, cx+ROAD_HALF+4,  cy-ROAD_HALF-40, lightNS);
-        drawLight(g, cx-ROAD_HALF-22, cy+ROAD_HALF+6,  lightNS);
-        drawLight(g, cx+ROAD_HALF+10, cy+ROAD_HALF+6,  lightEW);
-        drawLight(g, cx-ROAD_HALF-26, cy-ROAD_HALF-48, lightEW);
-        drawLight(g, cx+ROAD_HALF+96, cy-ROAD_HALF-126, lightNE);
+        double roundRadius = ROAD_HALF * 1.3;
+        drawApproachLight(g, cx, cy - roundRadius - 26, 0, -1, ROAD_HALF + 16, lightNS);
+        drawApproachLight(g, cx, cy + roundRadius + 26, 0, 1, ROAD_HALF + 16, lightNS);
+        drawApproachLight(g, cx + roundRadius + 26, cy, 1, 0, ROAD_HALF + 16, lightEW);
+        drawApproachLight(g, cx - roundRadius - 26, cy, -1, 0, ROAD_HALF + 16, lightEW);
+        drawApproachLight(g, cx, cy, Math.sqrt(0.5), -Math.sqrt(0.5), 170, lightNE);
     
         g.setFill(Color.web("#e2e8f0",0.4)); g.setFont(Font.font("Segoe UI",13));
         g.fillText("5-WAY INTERSECTION", cx-65, CANVAS_H-18);
+    }
+
+    private void drawApproachLight(GraphicsContext g, double originX, double originY,
+                                   double dirX, double dirY, double distanceFromOrigin,
+                                   SimpleTrafficLight light) {
+        double len = Math.hypot(dirX, dirY);
+        double ux = dirX / len;
+        double uy = dirY / len;
+        double px = -uy;
+        double py = ux;
+        double shoulderOffset = ROAD_HALF + 22;
+        double centerX = originX + ux * distanceFromOrigin + px * shoulderOffset;
+        double centerY = originY + uy * distanceFromOrigin + py * shoulderOffset;
+        drawLight(g, centerX - 7.5, centerY - 21, light);
     }
 
     // ── Grid network (2×2 blocks = 3×3 intersections) ─────────────
@@ -818,7 +836,7 @@ public class TrafficSimulationUI extends Application {
         g.save();
         g.translate(x,y);
        // g.rotate(Math.toDegrees(s.getRotation()));
-        double scale = currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
+        double scale = vehicleRenderScale();
         g.scale(scale, scale);
 
         if (s.isCrashed()) {
@@ -831,30 +849,15 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority() && s.isSirenFlash()) {
             g.setFill(Color.web("#fef3c7",0.25)); g.fillOval(-s.getLength(),-s.getLength(),s.getLength()*2,s.getLength()*2);
         }
-        /* 
-        java.awt.Color ac = s.getBodyColor();
-        g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
-        g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
-
         if (renderMode == RenderMode.GRAPHICS) {
-            java.awt.Color rc = s.getRoofColor();
-            g.setFill(Color.rgb(rc.getRed(),rc.getGreen(),rc.getBlue()));
-            g.fillRoundRect(-s.getLength()*0.26,-s.getWidth()*0.36,s.getLength()*0.52,s.getWidth()*0.72,3,3);
-
-            g.setFill(Color.web("#dbeafe",0.85));
-            g.fillRoundRect(s.getLength()*0.05,-s.getWidth()*0.28,s.getLength()*0.18,s.getWidth()*0.56,2,2);
-            g.setFill(Color.web("#111827"));
-            g.fillOval(-s.getLength()*0.24,-s.getWidth()*0.62,5,5);
-            g.fillOval(s.getLength()*0.20,-s.getWidth()*0.62,5,5);
-            g.fillOval(-s.getLength()*0.24,s.getWidth()*0.34,5,5);
-            g.fillOval(s.getLength()*0.20,s.getWidth()*0.34,5,5);
-
-            g.setFill(Color.web("#fef9c3",0.9));
-            g.fillOval(s.getLength()/2-5,-s.getWidth()/2,5,4);
-            g.fillOval(s.getLength()/2-5,s.getWidth()/2-4,5,4);
+            drawSpriteVehicle(g, s);
+        } else {
+            drawBasicVehicle(g, s);
         }
-        */
-        //Image sprite = SpriteLoader.get(s.getSpriteKey());
+        g.restore();
+    }
+
+    private void drawSpriteVehicle(GraphicsContext g, core.vehicle.RenderableState s) {
         RenderAssetKey dirKey = getSpriteKey(s.getSpriteKey(), s.getRotation());
         Image sprite = SpriteLoader.get(dirKey);
         if (sprite != null) {
@@ -868,7 +871,6 @@ public class TrafficSimulationUI extends Application {
             g.setFill(Color.rgb(ac.getRed(),ac.getGreen(),ac.getBlue()));
             g.fillRoundRect(-s.getLength()/2,-s.getWidth()/2,s.getLength(),s.getWidth(),5,5);
         }
-        
         if (s.isYielding()) { g.setStroke(Color.ORANGE); g.setLineWidth(2);
             g.strokeRoundRect(-s.getLength()/2-2,-s.getWidth()/2-2,s.getLength()+4,s.getWidth()+4,5,5); }
         if (s.isStopped() && !s.isYielding()) {
@@ -876,11 +878,48 @@ public class TrafficSimulationUI extends Application {
         if (s.isPriority()) {
             g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
             g.fillRect(-s.getLength()/2+2,-s.getWidth()/2-5,7,4); }
-            /* 
-        if (renderMode == RenderMode.BASIC) {
-            g.setFill(Color.WHITE); g.setFont(Font.font("Segoe UI",FontWeight.BOLD,7));
-            g.fillText(s.getBasicLabel(),-s.getLength()*0.22,3);
-        }*/
+    }
+
+    private void drawBasicVehicle(GraphicsContext g, core.vehicle.RenderableState s) {
+        g.save();
+        g.rotate(Math.toDegrees(s.getRotation()));
+
+        java.awt.Color ac = s.getBodyColor();
+        java.awt.Color rc = s.getRoofColor();
+        g.setFill(Color.rgb(ac.getRed(), ac.getGreen(), ac.getBlue()));
+        g.fillRoundRect(-s.getLength()/2, -s.getWidth()/2, s.getLength(), s.getWidth(), 5, 5);
+
+        g.setFill(Color.rgb(rc.getRed(), rc.getGreen(), rc.getBlue()));
+        g.fillRoundRect(-s.getLength()*0.24, -s.getWidth()*0.34, s.getLength()*0.46, s.getWidth()*0.68, 3, 3);
+
+        g.setFill(Color.web("#dbeafe", 0.85));
+        g.fillRoundRect(s.getLength()*0.05, -s.getWidth()*0.25, s.getLength()*0.16, s.getWidth()*0.50, 2, 2);
+        g.setFill(Color.web("#111827"));
+        g.fillOval(-s.getLength()*0.25, -s.getWidth()*0.64, 5, 5);
+        g.fillOval(s.getLength()*0.20, -s.getWidth()*0.64, 5, 5);
+        g.fillOval(-s.getLength()*0.25, s.getWidth()*0.36, 5, 5);
+        g.fillOval(s.getLength()*0.20, s.getWidth()*0.36, 5, 5);
+
+        g.setFill(Color.web("#fef9c3", 0.9));
+        g.fillOval(s.getLength()/2 - 5, -s.getWidth()/2, 5, 4);
+        g.fillOval(s.getLength()/2 - 5, s.getWidth()/2 - 4, 5, 4);
+
+        if (s.isYielding()) {
+            g.setStroke(Color.ORANGE);
+            g.setLineWidth(2);
+            g.strokeRoundRect(-s.getLength()/2-2, -s.getWidth()/2-2, s.getLength()+4, s.getWidth()+4, 5, 5);
+        }
+        if (s.isStopped() && !s.isYielding()) {
+            g.setFill(Color.web("#ef4444", 0.8));
+            g.fillRect(-s.getLength()/2-5, -2, 4, 4);
+        }
+        if (s.isPriority()) {
+            g.setFill(s.isSirenFlash() ? Color.web("#ef4444") : Color.web("#3b82f6"));
+            g.fillRect(-s.getLength()/2+2, -s.getWidth()/2-5, 7, 4);
+        }
+        g.setFill(Color.WHITE);
+        g.setFont(Font.font("Segoe UI", FontWeight.BOLD, 7));
+        g.fillText(s.getBasicLabel(), -s.getLength()*0.22, 3);
         g.restore();
     }
 
@@ -908,16 +947,22 @@ public class TrafficSimulationUI extends Application {
     }
 
     private void drawHitbox(GraphicsContext g, Vehicle v) {
-        Vector2D rightVector = new Vector2D(Math.cos(v.getRotation() + Math.PI/2), Math.sin(v.getRotation() + Math.PI/2));
-        Vector2D renderPos = v.getPosition().add(rightVector.multiply(v.getLateralOffset()));
+        Vector2D renderPos = v.getEffectivePosition();
         double x = renderPos.x, y = renderPos.y;
+        double scale = vehicleRenderScale();
+        double boxLength = v.getLength() * scale;
+        double boxWidth = v.getWidth() * scale;
         g.save();
         g.translate(x, y);
         g.rotate(Math.toDegrees(v.getRotation()));
         g.setStroke(Color.web("#00ff00", 0.7));
         g.setLineWidth(1.5);
-        g.strokeRect(-v.getLength()/2, -v.getWidth()/2, v.getLength(), v.getWidth());
+        g.strokeRect(-boxLength / 2, -boxWidth / 2, boxLength, boxWidth);
         g.restore();
+    }
+
+    private double vehicleRenderScale() {
+        return currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
     }
 
     private void drawCollisionEffects(GraphicsContext g) {
@@ -1002,7 +1047,7 @@ public class TrafficSimulationUI extends Application {
 
     private int dirCountForMode() {
         return switch (currentMode) {
-            case THREE_WAY -> 4;
+            case THREE_WAY -> 6;
             case FOUR_WAY -> 12;
             case FIVE_WAY -> 12;
             case GRID -> 12;
@@ -1017,6 +1062,10 @@ public class TrafficSimulationUI extends Application {
         try {
             Vehicle v = beh == null ? VehicleFactory.create(type, path)
                                     : VehicleFactory.create(type, path, beh);
+            if (isSpawnBlocked(v)) {
+                log("⏳ Bỏ qua sinh xe: " + type + " " + path.getEntryArm() + "→" + path.getExitArm() + " đang bị chắn");
+                return;
+            }
             world.addVehicle(v);
             collisionManager.startSpawnCooldown(v);
             spawnTimes.put(v.getId(), simTime);
@@ -1031,6 +1080,16 @@ public class TrafficSimulationUI extends Application {
         } catch (Exception ex) {
             log("⚠ Lỗi: " + ex.getMessage());
         }
+    }
+
+    private boolean isSpawnBlocked(Vehicle candidate) {
+        Vector2D start = candidate.getPosition();
+        return world.getVehicles().stream()
+                .filter(v -> !v.isFinished() && !v.isCrashed())
+                .anyMatch(v -> {
+                    double minDistance = candidate.getLength() / 2.0 + v.getLength() / 2.0 + 8.0;
+                    return start.distanceTo(v.getPosition()) < minDistance;
+                });
     }
 
     private void cleanupVehicles(double deltaTime) {
@@ -1151,7 +1210,7 @@ public class TrafficSimulationUI extends Application {
     // ── 3-way ─────────────────────────────────────────────────────
     private VehiclePath makeThreeWayPath(int idx) {
         double cx=cx(), cy=cy(), lw=laneOffset(0);
-        return switch(idx%4) {
+        return switch(idx%6) {
             case 0 -> {
                 double x = cx + laneOffset(nextLane());
                 yield new VehiclePath("3w-ns", List.of(
@@ -1168,10 +1227,18 @@ public class TrafficSimulationUI extends Application {
                 new Vector2D(-20,cy-lw), new Vector2D(cx-ROAD_HALF-10,cy-lw),
                 new Vector2D(cx-lw,cy-lw), new Vector2D(cx-lw,cy-ROAD_HALF-20),
                 new Vector2D(cx-lw,-20)), 1,"light-EW","W","N");
-            default -> new VehiclePath("3w-ws", List.of(
-                new Vector2D(-20,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+            case 3 -> new VehiclePath("3w-ws", List.of(
+                new Vector2D(-20,cy-lw), new Vector2D(cx-ROAD_HALF-10,cy-lw),
                 new Vector2D(cx+lw,cy+lw), new Vector2D(cx+lw,cy+ROAD_HALF+20),
                 new Vector2D(cx+lw,CANVAS_H+20)), 1,"light-EW","W","S");
+            case 4 -> new VehiclePath("3w-nw", List.of(
+                new Vector2D(cx+lw,-20), new Vector2D(cx+lw,cy-ROAD_HALF-10),
+                new Vector2D(cx+lw,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+                new Vector2D(-20,cy+lw)), 1,"light-NS","N","W");
+            default -> new VehiclePath("3w-sw", List.of(
+                new Vector2D(cx-lw,CANVAS_H+20), new Vector2D(cx-lw,cy+ROAD_HALF+10),
+                new Vector2D(cx-lw,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+                new Vector2D(-20,cy+lw)), 1,"light-NS","S","W");
         };
     }
 
@@ -1279,7 +1346,7 @@ public class TrafficSimulationUI extends Application {
     private VehiclePath getPathByModeAndDir(int idx) {
         return switch (currentMode) {
             case FOUR_WAY -> makeFourWayPath(idx, randomLane());
-            case THREE_WAY -> makeThreeWayPath(idx%4);
+            case THREE_WAY -> makeThreeWayPath(idx%6);
             case FIVE_WAY  -> makeFiveWayPath(idx);
             case GRID      -> makeGridPath(idx);
         };
