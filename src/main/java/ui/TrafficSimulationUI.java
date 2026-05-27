@@ -774,12 +774,12 @@ public class TrafficSimulationUI extends Application {
         g.fillRect(cx + ROAD_HALF, cy + ROAD_HALF - 4, CANVAS_W, 4);
         // lightNE: highlight cạnh TRÊN arm (local y = -ROAD_HALF, vẽ strip dày 4px vào trong)
         // Đèn NE ở góc trên-phải → highlight cạnh phải của arm diagonal
-        double neHighlightLen = armLen * 0.35;
+        double neHighlightLen = armLen * 0.7;
         g.setFill(neC.deriveColor(0,1,1,0.55));
         g.save();
         g.translate(cx, cy);
         g.rotate(-45);
-        g.fillRect(ROAD_HALF, -ROAD_HALF, neHighlightLen, 4); // cạnh phải arm (local x > ROAD_HALF, y=-ROAD_HALF)
+        g.fillRect(ROAD_HALF+65, -ROAD_HALF, neHighlightLen, 4); // cạnh phải arm (local x > ROAD_HALF, y=-ROAD_HALF)
         g.restore();
 
         drawLight(g, cx+ROAD_HALF+10, cy-ROAD_HALF-52, lightNS, "N ↓");
