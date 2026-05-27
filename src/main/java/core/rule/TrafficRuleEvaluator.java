@@ -112,70 +112,71 @@ public final class TrafficRuleEvaluator {
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước.
+     * Finds the nearest vehicle directly ahead of {@code self}, considering
+     * both same-path vehicles and cross-path vehicles in the intersection.
      *
-     * <p><b>Nguyên tắc cross-path:</b><br>
-     * Xe từ luồng khác chỉ bị tính là vật cản khi:</p>
-     * <ol>
-     *   <li>Nó đang đứng chờ đèn (isStopped) — nghĩa là đang ở phía trước vạch dừng,
-     *       nên xe hiện tại cũng phải dừng xếp hàng.</li>
-     *   <li>HOẶC xe hiện tại chưa vào giao lộ (chưa qua stopIndex) — cần phát hiện
-     *       xe đang băng ngang trước mặt để tránh đâm.</li>
-     * </ol>
-     * Khi xe hiện tại đã vào giao lộ (đã qua stopIndex), nó KHÔNG dừng lại vì
-     * xe luồng khác — điều đó sẽ gây kẹt giữa giao lộ và tạo deadlock.
-     *
-     * <p><b>Chống deadlock:</b> Nếu 2 xe cùng mutual-blocking, xe ID nhỏ hơn được đi trước.</p>
-     *
-     * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
+     * @return the nearest blocking vehicle, or empty if the path is clear.
      */
-    public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
+    public Optional<Vehicle> frontVehicle(Vehicle self, SimulationWorld world) {
         String pathId = self.getPath().getId();
         Vector2D pos  = self.getPosition();
 
-        // ── 1. Xe cùng path ──────────────────────────────────────────
-        double samePath = world.getVehicles().stream()
+        // ── 1. Same path ─────────────────────────────────────────────
+        Optional<Vehicle> samePath = world.getVehicles().stream()
                 .filter(v -> v != self)
                 .filter(v -> v.getPath().getId().equals(pathId))
                 .filter(v -> v.getWaypointIndex() >= self.getWaypointIndex())
                 .filter(v -> isAheadOnPath(self, v))
-                .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
-                .map(front -> {
-                    double centerDist = front.getPosition().distanceTo(pos);
-                    return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
-                })
-                .orElse(-1.0);
+                .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)));
 
-        // ── 2. Xe khác path (cross-path) ─────────────────────────────
-        // Xe hiện tại đã vào giao lộ (qua stopIndex) → chỉ quan tâm cùng path,
-        // không dừng vì xe luồng khác (tránh kẹt giữa giao lộ).
+        // ── 2. Cross-path ─────────────────────────────────────────────
+        // Only checked when self has not yet entered the intersection.
         boolean selfInsideIntersection = self.getWaypointIndex() > self.getPath().getStopIndex();
-
-        final double CROSS_CHECK_RADIUS = 100.0; // tăng từ 80 lên 100px để phát hiện sớm hơn
-        double crossPath = -1.0;
+        Optional<Vehicle> crossPath = Optional.empty();
 
         if (!selfInsideIntersection) {
-            // Xe chưa vào giao lộ: phát hiện xe đang băng ngang phía trước
             crossPath = world.getVehicles().stream()
                     .filter(v -> v != self)
                     .filter(v -> !v.getPath().getId().equals(pathId))
-                    .filter(v -> isAheadOnPath(self, v))
-                    // Chỉ tính xe đang dừng chờ đèn HOẶC đang trong giao lộ (băng ngang)
-                    .filter(v -> v.isStopped() || v.getWaypointIndex() > v.getPath().getStopIndex())
-                    // Loại trừ mutual blocking deadlock
+                    // Include vehicles actively crossing the intersection OR stopped
+                    // vehicles that are physically close enough to be a real obstacle
+                    // (fixes the case where two cars queue toward the same turning point).
+                    .filter(v -> v.getWaypointIndex() > v.getPath().getStopIndex()
+                              || (v.isStopped() && v.getPosition().distanceTo(pos) < self.getLength() * 3.0))
+                    .filter(v -> isAheadOnPathNarrow(self, v))
                     .filter(v -> !isMutuallyBlocking(self, v, world))
-                    .filter(v -> v.getPosition().distanceTo(pos) < CROSS_CHECK_RADIUS)
-                    .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
-                    .map(front -> {
-                        double centerDist = front.getPosition().distanceTo(pos);
-                        return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
-                    })
-                    .orElse(-1.0);
+                    .filter(v -> v.getPosition().distanceTo(pos) < 100.0)
+                    .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)));
         }
 
-        if (samePath < 0) return crossPath;
-        if (crossPath < 0) return samePath;
-        return Math.min(samePath, crossPath);
+        if (samePath.isEmpty()) return crossPath;
+        if (crossPath.isEmpty()) return samePath;
+        // Return whichever is closer
+        double dSame  = samePath.get().getPosition().distanceTo(pos);
+        double dCross = crossPath.get().getPosition().distanceTo(pos);
+        return dSame <= dCross ? samePath : crossPath;
+    }
+
+    /**
+     * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước.
+     *
+     * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
+     */
+    public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
+        return frontVehicle(self, world).map(front -> {
+            double centerDist = front.getPosition().distanceTo(self.getPosition());
+            return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
+        }).orElse(-1.0);
+    }
+
+    /**
+     * Speed (px/s) of the vehicle directly ahead of {@code self}.
+     * Returns 0.0 if there is no vehicle ahead (treat as stationary obstacle).
+     */
+    public double frontVehicleSpeed(Vehicle self, SimulationWorld world) {
+        return frontVehicle(self, world)
+                .map(Vehicle::getSpeed)
+                .orElse(0.0);
     }
 
     /**
@@ -197,10 +198,13 @@ public final class TrafficRuleEvaluator {
 
     /**
      * {@code other} có ở phía trước {@code self} theo hướng di chuyển không?
+     * Uses the waypoint direction when the vehicle is slow or stopped, since
+     * velocity is unreliable at low speeds.
      */
     private boolean isAheadOnPath(Vehicle self, Vehicle other) {
         Vector2D dir = self.getVelocity();
-        if (dir.length() < 1e-9) {
+        // Use waypoint direction when moving slowly or stopped
+        if (dir.length() < self.getMaxSpeed() * 0.1) {
             int nextIdx = self.getWaypointIndex();
             if (nextIdx < self.getPath().getWaypoints().size()) {
                 dir = self.getPath().getWaypoints().get(nextIdx)
@@ -210,7 +214,29 @@ public final class TrafficRuleEvaluator {
             }
         }
         Vector2D toOther = other.getPosition().subtract(self.getPosition());
+        if (toOther.length() < 1e-9) return true; // same position = definitely blocking
         return dir.normalize().dot(toOther.normalize()) > 0.5;
+    }
+
+    /**
+     * Stricter version for cross-path checks: requires the other vehicle to be
+     * within a narrow forward cone (dot > 0.95, i.e. ~18°) to avoid false positives
+     * from vehicles on adjacent parallel lanes.
+     */
+    private boolean isAheadOnPathNarrow(Vehicle self, Vehicle other) {
+        Vector2D dir = self.getVelocity();
+        if (dir.length() < self.getMaxSpeed() * 0.1) {
+            int nextIdx = self.getWaypointIndex();
+            if (nextIdx < self.getPath().getWaypoints().size()) {
+                dir = self.getPath().getWaypoints().get(nextIdx)
+                         .subtract(self.getPosition());
+            } else {
+                return false;
+            }
+        }
+        Vector2D toOther = other.getPosition().subtract(self.getPosition());
+        if (toOther.length() < 1e-9) return false;
+        return dir.normalize().dot(toOther.normalize()) > 0.95;
     }
 
     // ─────────────────────────────────────────────────────────────────

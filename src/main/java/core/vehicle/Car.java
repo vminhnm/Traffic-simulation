@@ -48,7 +48,7 @@ public class Car extends Vehicle {
                 //.spritePath("assets/sprites/car.png")
                 .spriteKey(RenderAssetKey.CAR_EAST)
                 .defaultMaxSpeed(90)        // px/s
-                .defaultAcceleration(45)    // px/s²
+                .defaultAcceleration(40)    // px/s²
                 .defaultLength(36)
                 .defaultWidth(18)
                 .defaultRenderLength(48)

@@ -34,7 +34,7 @@ public class Motorbike extends Vehicle {
                 //.spritePath("assets/sprites/motorbike.png")
                 .spriteKey(RenderAssetKey.MOTORBIKE_EAST)
                 .defaultMaxSpeed(110)
-                .defaultAcceleration(70)
+                .defaultAcceleration(40)
                 .defaultLength(30)
                 .defaultWidth(15)
                 .defaultRenderLength(103)

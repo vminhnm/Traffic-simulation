@@ -33,7 +33,7 @@ public class Bus extends Vehicle {
                 //.spritePath("assets/sprites/bus.png")
                 .spriteKey(RenderAssetKey.BUS_EAST)
                 .defaultMaxSpeed(65)
-                .defaultAcceleration(22)
+                .defaultAcceleration(40)
                 .defaultLength(50)
                 .defaultWidth(18)
                 .defaultRenderLength(67)

@@ -46,7 +46,7 @@ public class Ambulance extends PriorityVehicle {
                 //.spritePath("assets/sprites/ambulance.png")
                 .spriteKey(RenderAssetKey.AMBULANCE_EAST)
                 .defaultMaxSpeed(120)
-                .defaultAcceleration(60)
+                .defaultAcceleration(40)
                 .defaultLength(44)
                 .defaultWidth(20)
                 .defaultRenderLength(57)

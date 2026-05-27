@@ -57,17 +57,50 @@ public class NormalDriver implements DriverBehavior {
         if (RULES.mustStopAtRedLight(vehicle, world)) {
             return DrivingDecision.stop();
         }
+        // ── 2b. Green-light queue release ───────────────────────────
+        // If the light ahead is green and we are stopped (or very slow)
+        // in a queue, allow a controlled creep-forward so vehicles
+        // don't rear-end the car in front that is just starting to move.
+        boolean lightIsGreen = RULES.isNearStopLine(vehicle, world)
+                ? RULES.getApproachingLightColor(vehicle, world) == core.trafficlight.LightColor.GREEN
+                : false;
+        double queueCreepSpeed = vehicle.getMaxSpeed() * 0.25; // gentle follow speed
 
         // ── 3. Giữ khoảng cách xe trước ────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
-        double safeDistance = vehicle.getLength() * 1.5 + 15;
+        double speed = vehicle.getSpeed();
+        double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
+        double safeDistance = vehicle.getLength() * 2.0 + 20 + brakingDistance;
 
         if (gap >= 0 && gap < safeDistance) {
-            // Giảm tốc tỉ lệ: càng gần càng chậm
-            double ratio      = Math.max(0, gap / safeDistance);
+            // When the light is green and the front vehicle is accelerating
+            // away from a stop, do not hard-stop — follow at a creep speed
+            // so the queue flows without rear-ending the leader.
+            lightIsGreen = RULES.getApproachingLightColor(vehicle, world)
+                    == core.trafficlight.LightColor.GREEN;
+            double frontSpeed = RULES.frontVehicleSpeed(vehicle, world);
+            boolean frontIsMovingOrAccelerating = frontSpeed > 0 || lightIsGreen;
+
+            if (gap < vehicle.getLength() * 0.8) {
+                // Truly too close — only hard-stop if front is also stopped
+                if (!frontIsMovingOrAccelerating) {
+                    return DrivingDecision.stop();
+                }
+                // Front is moving; brake hard but do not stop
+                return DrivingDecision.brake(Math.max(frontSpeed, vehicle.getMaxSpeed() * 0.05));
+            }
+            double ratio = Math.max(0, gap / safeDistance);
             double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.6;
+            // When following a green-light queue release, ensure a minimum
+            // creep speed so the queue doesn't stall behind a slow leader.
+            if (lightIsGreen && vehicle.getSpeed() < vehicle.getMaxSpeed() * 0.1) {
+                targetSpeed = Math.max(targetSpeed, vehicle.getMaxSpeed() * 0.15);
+            }
+            double decel = vehicle.getAcceleration() * 2.0;
+            double physicalMax = Math.sqrt(2.0 * decel * Math.max(0, gap - vehicle.getLength() * 0.5));
+            targetSpeed = Math.min(targetSpeed, physicalMax);
             return DrivingDecision.brake(targetSpeed);
-        }
+}
 
         // ── 4. Chạy bình thường ─────────────────────────────────────
         return DrivingDecision.accelerate(vehicle.getMaxSpeed());

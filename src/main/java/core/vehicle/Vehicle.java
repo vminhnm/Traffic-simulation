@@ -133,7 +133,7 @@ public abstract class Vehicle implements Movable {
         DrivingDecision decision = driverBehavior.decide(this, world);
 
         // 2. Áp dụng quyết định
-        applyDecision(decision, deltaTime);
+        applyDecision(decision, deltaTime, world);
 
         // 3. Bám theo path
         if (!stopped) {
@@ -155,8 +155,10 @@ public abstract class Vehicle implements Movable {
     private static final double DEADLOCK_TIMEOUT = 3.0;
     /** Cờ đánh dấu xe đang ở chế độ "phá deadlock" — nhích từ từ về phía trước. */
     private boolean deadlockEscape = false;
+    /** Cờ đánh dấu xe đang dừng vì đèn đỏ/vàng — không kích hoạt deadlock escape. */
+    private boolean stoppedForLight = false;
 
-    protected void applyDecision(DrivingDecision decision, double deltaTime) {
+    protected void applyDecision(DrivingDecision decision, double deltaTime, SimulationWorld world) {
         stopped  = false;
         yielding = false;
 
@@ -164,6 +166,16 @@ public abstract class Vehicle implements Movable {
         // Nếu xe nhận lệnh STOP quá lâu mà không phải do đèn đỏ,
         // kích hoạt chế độ thoát deadlock: nhích chậm về phía trước.
         if (decision.getAction() == core.driver.DrivingAction.STOP && deadlockEscape) {
+            // Suppress escape if the car ahead is still stopped (e.g. queued at red light)
+            double gap = new core.rule.TrafficRuleEvaluator().gapToFrontVehicle(this, world);
+            boolean carAheadStopped = gap >= 0 && gap < getLength() * 3.0;
+            if (carAheadStopped || stoppedForLight) {
+                deadlockEscape = false;
+                stoppedTimer   = 0;
+                currentSpeed   = 0;
+                stopped        = true;
+                return;
+            }
             // Đang thoát deadlock: tăng tốc chậm, bỏ qua lệnh STOP này
             currentSpeed = Math.min(currentSpeed + acceleration * 0.5 * deltaTime, maxSpeed * 0.3);
             stopped = false;
@@ -191,18 +203,34 @@ public abstract class Vehicle implements Movable {
                 stoppedTimer   = 0;
                 deadlockEscape = false;
                 double target = decision.getTargetSpeed();
+                // Use closing speed: only the speed *relative to the front vehicle* needs to be bled off
+                core.rule.TrafficRuleEvaluator eval = new core.rule.TrafficRuleEvaluator();
+                double gap = eval.gapToFrontVehicle(this, world);
+                if (gap >= 0) {
+                    double frontSpeed   = eval.frontVehicleSpeed(this, world);
+                    double closingSpeed = Math.max(0, currentSpeed - frontSpeed);
+                    // Safe closing speed for this gap: sqrt(2 * decel * gap)
+                    double safeClosing  = Math.sqrt(2.0 * acceleration * 2.0 * Math.max(0, gap));
+                    // Convert back to absolute speed cap
+                    double absoluteCap  = frontSpeed + safeClosing;
+                    target = Math.min(target, absoluteCap);
+                }
                 currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
             }
             case STOP -> {
                 currentSpeed = 0;
                 stopped      = true;
+                // Detect whether this stop is because of a red/yellow light
+                stoppedForLight = new core.rule.TrafficRuleEvaluator().mustStopAtRedLight(this, world)
+                        || new core.rule.TrafficRuleEvaluator().isNearStopLine(this, world)
+                           && new core.rule.TrafficRuleEvaluator().getApproachingLightColor(this, world) != core.trafficlight.LightColor.GREEN;
                 stoppedTimer += deltaTime; // ← chỉ đếm khi dừng hẳn
                 if (stoppedTimer >= HORN_DELAY) {
                     sound.SoundManager.play(sound.SoundType.HORN_SHORT);
                     stoppedTimer = -999; // reset để không phát liên tục
                 }
-                // Phá deadlock: nếu dừng quá DEADLOCK_TIMEOUT giây → nhích thoát
-                if (stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY) {
+                // Phá deadlock: nếu dừng quá DEADLOCK_TIMEOUT giây VÀ không phải vì đèn đỏ → nhích thoát
+                if (stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY && !stoppedForLight) {
                     deadlockEscape = true;
                     stopped        = false;
                     currentSpeed   = maxSpeed * 0.1; // nhích chậm
@@ -361,6 +389,7 @@ public abstract class Vehicle implements Movable {
     public double         getLength()         { return length;         }
     public double         getWidth()          { return width;          }
     public VehiclePath    getPath()           { return path;           }
+    public double         getAcceleration()   { return acceleration;   }
     public int            getWaypointIndex()  { return waypointIndex;  }
     public boolean        isFinished()        { return finished;       }
     public boolean        isStopped()         { return stopped;        }

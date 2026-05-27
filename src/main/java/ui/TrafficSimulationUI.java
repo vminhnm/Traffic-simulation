@@ -774,12 +774,12 @@ public class TrafficSimulationUI extends Application {
         g.fillRect(cx + ROAD_HALF, cy + ROAD_HALF - 4, CANVAS_W, 4);
         // lightNE: highlight cạnh TRÊN arm (local y = -ROAD_HALF, vẽ strip dày 4px vào trong)
         // Đèn NE ở góc trên-phải → highlight cạnh phải của arm diagonal
-        double neHighlightLen = armLen * 0.75;
+        double neHighlightLen = armLen * 0.7;
         g.setFill(neC.deriveColor(0,1,1,0.55));
         g.save();
         g.translate(cx, cy);
         g.rotate(-45);
-        g.fillRect(ROAD_HALF, -ROAD_HALF, neHighlightLen, 4); // cạnh phải arm (local x > ROAD_HALF, y=-ROAD_HALF)
+        g.fillRect(ROAD_HALF+65, -ROAD_HALF, neHighlightLen, 4); // cạnh phải arm (local x > ROAD_HALF, y=-ROAD_HALF)
         g.restore();
 
         drawLight(g, cx+ROAD_HALF+10, cy-ROAD_HALF-52, lightNS, "N ↓");
@@ -990,9 +990,11 @@ public class TrafficSimulationUI extends Application {
         double x = s.getPosition().x, y = s.getPosition().y;
         g.save();
         g.translate(x, y);
-        // Always rotate canvas to travel direction — works for both BASIC and GRAPHICS.
-        // Sprites are drawn at 0° (EAST-facing), canvas rotation handles orientation.
-        g.rotate(Math.toDegrees(s.getRotation()));
+        // BASIC mode: rotate canvas to travel direction so the rectangle faces correctly.
+        // GRAPHICS mode: no canvas rotation — the directional sprite already faces the right way.
+        if (renderMode == RenderMode.BASIC) {
+            g.rotate(Math.toDegrees(s.getRotation()));
+        }
         double scale = currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
         g.scale(scale, scale);
 
@@ -1036,8 +1038,8 @@ public class TrafficSimulationUI extends Application {
             g.fillText(s.getBasicLabel(), -bL*0.22, 3);
 
         } else {
-            // ── GRAPHICS mode: sprite at 0° (EAST), canvas already rotated ──
-            Image sprite = SpriteLoader.get(getEastSpriteKey(s.getSpriteKey()));
+            // ── GRAPHICS mode: pick the correct directional sprite based on rotation ──
+            Image sprite = SpriteLoader.get(getDirectionalSpriteKey(s.getSpriteKey(), s.getRotation()));
             if (sprite != null) {
                 // Use the vehicle's render length, preserve sprite aspect ratio for height
                 double drawW = s.getLength();
@@ -1084,6 +1086,29 @@ public class TrafficSimulationUI extends Application {
             return RenderAssetKey.valueOf(baseName + "_EAST");
         } catch (IllegalArgumentException e) {
             return base;
+        }
+    }
+
+    /**
+     * Returns the directional sprite key that best matches the given rotation angle (radians).
+     * Rotation 0 = EAST, PI/2 = SOUTH, PI = WEST, -PI/2 = NORTH (JavaFX screen coords: y increases downward).
+     */
+    private RenderAssetKey getDirectionalSpriteKey(RenderAssetKey base, double rotation) {
+        String baseName = base.name().replaceAll(
+            "_(EAST|NORTH|SOUTH|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|TOP)$", "");
+        // Normalise angle to [0, 2π)
+        double angle = rotation % (2 * Math.PI);
+        if (angle < 0) angle += 2 * Math.PI;
+        // 8-direction quantisation: each sector is 45° wide
+        // 0=EAST, 45=SOUTHEAST, 90=SOUTH, 135=SOUTHWEST, 180=WEST, 225=NORTHWEST, 270=NORTH, 315=NORTHEAST
+        String[] dirs = { "EAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "WEST", "NORTHWEST", "NORTH", "NORTHEAST" };
+        int sector = (int) Math.round(angle / (Math.PI / 4)) % 8;
+        String suffix = dirs[sector];
+        try {
+            return RenderAssetKey.valueOf(baseName + "_" + suffix);
+        } catch (IllegalArgumentException e) {
+            // Fallback to EAST if the directional variant doesn't exist
+            return getEastSpriteKey(base);
         }
     }
 
@@ -1305,29 +1330,33 @@ public class TrafficSimulationUI extends Application {
     // Lane 0 = phải (right/slower), Lane 1 = trái (left/faster)
     
     private VehiclePath makeNorthSouthPath(int lane) {
-        // N→S (top to bottom): lane 0 on right (x-), lane 1 on left (x+)
-        double x = cx() - (lane == 0 ? laneOffset(lane) : -laneOffset(lane));
+        // N→S (top to bottom): both lanes on left half (x < cx), right-hand traffic
+        // lane 0 = right lane (closer to center divider), lane 1 = left lane (closer to road edge)
+        double x = cx() - laneOffset(lane);
         return new VehiclePath("ns"+lane, List.of(
             new Vector2D(x,-20), new Vector2D(x, cy()-ROAD_HALF-10),
             new Vector2D(x, cy()), new Vector2D(x, CANVAS_H+20)), 1,"light-NS","N","S");
     }
     private VehiclePath makeSouthNorthPath(int lane) {
-        // S→N (bottom to top): lane 0 on right (x+), lane 1 on left (x-)
-        double x = cx() + (lane == 0 ? laneOffset(lane) : -laneOffset(lane));
+        // S→N (bottom to top): both lanes on right half (x > cx), right-hand traffic
+        // lane 0 = right lane (closer to center divider), lane 1 = left lane (closer to road edge)
+        double x = cx() + laneOffset(lane);
         return new VehiclePath("sn"+lane, List.of(
             new Vector2D(x,CANVAS_H+20), new Vector2D(x, cy()+ROAD_HALF+10),
             new Vector2D(x, cy()), new Vector2D(x,-20)), 1,"light-NS","S","N");
     }
     private VehiclePath makeEastWestPath(int lane) {
-        // E→W (right to left): lane 0 on right (y-), lane 1 on left (y+)
-        double y = cy() - (lane == 0 ? laneOffset(lane) : -laneOffset(lane));
+        // E→W (right to left): both lanes on top half (y < cy), right-hand traffic
+        // lane 0 = right lane (closer to center divider), lane 1 = left lane (closer to road edge)
+        double y = cy() - laneOffset(lane);
         return new VehiclePath("ew"+lane, List.of(
             new Vector2D(CANVAS_W+20,y), new Vector2D(cx()+ROAD_HALF+10,y),
             new Vector2D(cx(),y), new Vector2D(-20,y)), 1,"light-EW","E","W");
     }
     private VehiclePath makeWestEastPath(int lane) {
-        // W→E (left to right): lane 0 on right (y+), lane 1 on left (y-)
-        double y = cy() + (lane == 0 ? laneOffset(lane) : -laneOffset(lane));
+        // W→E (left to right): both lanes on bottom half (y > cy), right-hand traffic
+        // lane 0 = right lane (closer to center divider), lane 1 = left lane (closer to road edge)
+        double y = cy() + laneOffset(lane);
         return new VehiclePath("we"+lane, List.of(
             new Vector2D(-20,y), new Vector2D(cx()-ROAD_HALF-10,y),
             new Vector2D(cx(),y), new Vector2D(CANVAS_W+20,y)), 1,"light-EW","W","E");
@@ -1341,61 +1370,67 @@ public class TrafficSimulationUI extends Application {
         double near = ROAD_HALF - 8;
         double lw = laneOffset(0);
         return switch (idx) {
-            case 0 -> // N→E: approach on right lane (x-), exit on right lane (y+)
+            case 0 -> // N→E: approach on right lane (x = cx-lw), exit on bottom of E-road (y = cy+lw)
                 new VehiclePath("n-e-turn", List.of(
                     new Vector2D(cx - lw, -20),
                     new Vector2D(cx - lw, cy - near),
+                    new Vector2D(cx - lw, cy + lw),   // curve stays in approach lane x, then shifts
                     new Vector2D(cx + near, cy + lw),
                     new Vector2D(CANVAS_W + 20, cy + lw)), 1, "light-NS", "N", "E");
-            case 1 -> // S→W: approach on right lane (x+), exit on right lane (y-)
+            case 1 -> // S→W: approach on right lane (x = cx+lw), exit on top of W-road (y = cy-lw)
                 new VehiclePath("s-w-turn", List.of(
                     new Vector2D(cx + lw, CANVAS_H + 20),
                     new Vector2D(cx + lw, cy + near),
+                    new Vector2D(cx + lw, cy - lw),   // curve stays in approach lane x
                     new Vector2D(cx - near, cy - lw),
                     new Vector2D(-20, cy - lw)), 1, "light-NS", "S", "W");
-            case 2 -> // E→S: approach on right lane (y-), exit on right lane (x+)
+            case 2 -> // E→S: approach on right lane (y = cy-lw), exit on left of S-road (x = cx-lw, southbound)
                 new VehiclePath("e-s-turn", List.of(
                     new Vector2D(CANVAS_W + 20, cy - lw),
                     new Vector2D(cx + near, cy - lw),
-                    new Vector2D(cx + lw, cy + near),
-                    new Vector2D(cx + lw, CANVAS_H + 20)), 1, "light-EW", "E", "S");
-            default -> // W→N: approach on right lane (y+), exit on right lane (x-)
+                    new Vector2D(cx - lw, cy - lw),   // curve crosses intersection to southbound lane
+                    new Vector2D(cx - lw, cy + near),
+                    new Vector2D(cx - lw, CANVAS_H + 20)), 1, "light-EW", "E", "S");
+            default -> // W→N: approach on right lane (y = cy+lw), exit on right of N-road (x = cx+lw, northbound)
                 new VehiclePath("w-n-turn", List.of(
                     new Vector2D(-20, cy + lw),
                     new Vector2D(cx - near, cy + lw),
-                    new Vector2D(cx - lw, cy - near),
-                    new Vector2D(cx - lw, -20)), 1, "light-EW", "W", "N");
+                    new Vector2D(cx + lw, cy + lw),   // curve crosses intersection to northbound lane
+                    new Vector2D(cx + lw, cy - near),
+                    new Vector2D(cx + lw, -20)), 1, "light-EW", "W", "N");
         };
     }
 
 
-    private VehiclePath makeThreeWayPath(int idx) {
-        double cx=cx(), cy=cy(), lw=laneOffset(0);
-        return switch(idx%4) {
-            case 0 -> {
-                // N→S: lane 0 on right (x-), lane 1 on left (x+)
-                double x = cx - (idx == 0 ? laneOffset(nextLane()) : -laneOffset(0));
-                yield new VehiclePath("3w-ns", List.of(
-                    new Vector2D(x,-20), new Vector2D(x,cy-ROAD_HALF-10),
-                    new Vector2D(x,cy+ROAD_HALF+10), new Vector2D(x,CANVAS_H+20)), 1,"light-NS","N","S");
-            }
-            case 1 -> {
-                // S→N: lane 0 on right (x+), lane 1 on left (x-)
-                double x = cx + (idx == 1 ? laneOffset(nextLane()) : -laneOffset(0));
-                yield new VehiclePath("3w-sn", List.of(
-                    new Vector2D(x,CANVAS_H+20), new Vector2D(x,cy+ROAD_HALF+10),
-                    new Vector2D(x,cy-ROAD_HALF-10), new Vector2D(x,-20)), 1,"light-NS","S","N");
-            }
-            case 2 -> new VehiclePath("3w-wn", List.of(
-                new Vector2D(-20,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
-                new Vector2D(cx-lw,cy+lw), new Vector2D(cx-lw,cy-ROAD_HALF-20),
-                new Vector2D(cx-lw,-20)), 1,"light-EW","W","N");
-            default -> new VehiclePath("3w-ws", List.of(
-                new Vector2D(-20,cy-lw), new Vector2D(cx-ROAD_HALF-10,cy-lw),
-                new Vector2D(cx+lw,cy-lw), new Vector2D(cx+lw,cy+ROAD_HALF+20),
-                new Vector2D(cx+lw,CANVAS_H+20)), 1,"light-EW","W","S");
-        };
-    }
+private VehiclePath makeThreeWayPath(int idx) {
+    double cx=cx(), cy=cy(), lw=laneOffset(0);
+    return switch(idx%4) {
+        case 0 -> {
+            // N→S: standard right-hand lane (x < cx)
+            double x = cx - laneOffset(0);
+            yield new VehiclePath("3w-ns", List.of(
+                new Vector2D(x,-20), new Vector2D(x,cy-ROAD_HALF-10),
+                new Vector2D(x,cy+ROAD_HALF+10), new Vector2D(x,CANVAS_H+20)), 1,"light-NS","N","S");
+        }
+        case 1 -> {
+            // S→N: standard right-hand lane (x > cx)
+            double x = cx + laneOffset(0);
+            yield new VehiclePath("3w-sn", List.of(
+                new Vector2D(x,CANVAS_H+20), new Vector2D(x,cy+ROAD_HALF+10),
+                new Vector2D(x,cy-ROAD_HALF-10), new Vector2D(x,-20)), 1,"light-NS","S","N");
+        }
+        case 2 -> new VehiclePath("3w-wn", List.of(
+            // W→N: enter from West at y=cy+lw (right lane going E), exit northbound lane x=cx+lw
+            new Vector2D(-20,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+            new Vector2D(cx+lw,cy+lw), new Vector2D(cx+lw,cy-ROAD_HALF-20),
+            new Vector2D(cx+lw,-20)), 1,"light-EW","W","N");
+        default -> new VehiclePath("3w-ws", List.of(
+            // W→S: enter from West at y=cy+lw (right lane going E), exit southbound lane x=cx-lw
+            new Vector2D(-20,cy+lw), new Vector2D(cx-ROAD_HALF-10,cy+lw),
+            new Vector2D(cx-lw,cy+lw), new Vector2D(cx-lw,cy+ROAD_HALF+20),
+            new Vector2D(cx-lw,CANVAS_H+20)), 1,"light-EW","W","S");
+    };
+}
 
     // ── 5-way (Vietnamese traffic convention) ──────────────────────
     private VehiclePath makeFiveWayPath(int idx) {

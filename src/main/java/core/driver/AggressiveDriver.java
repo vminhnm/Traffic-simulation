@@ -72,6 +72,10 @@ public class AggressiveDriver implements DriverBehavior {
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;
 
         if (gap >= 0 && gap < safeDistance) {
+            // Stop completely when nearly touching the car ahead
+            if (gap < vehicle.getLength() * 0.3) {
+                return DrivingDecision.stop();
+            }
             double ratio = Math.max(0, gap / safeDistance);
             return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.4);
         }

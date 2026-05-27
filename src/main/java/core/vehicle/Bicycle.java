@@ -33,7 +33,7 @@ public class Bicycle extends Vehicle {
                 //.spritePath("assets/sprites/bicycle.png")
                 .spriteKey(RenderAssetKey.BICYCLE_EAST)
                 .defaultMaxSpeed(35)
-                .defaultAcceleration(20)
+                .defaultAcceleration(40)
                 .defaultLength(25)
                 .defaultWidth(10)
                 .defaultRenderLength(147)
