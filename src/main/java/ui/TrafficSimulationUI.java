@@ -774,7 +774,7 @@ public class TrafficSimulationUI extends Application {
         g.fillRect(cx + ROAD_HALF, cy + ROAD_HALF - 4, CANVAS_W, 4);
         // lightNE: highlight cạnh TRÊN arm (local y = -ROAD_HALF, vẽ strip dày 4px vào trong)
         // Đèn NE ở góc trên-phải → highlight cạnh phải của arm diagonal
-        double neHighlightLen = armLen * 0.75;
+        double neHighlightLen = armLen * 0.35;
         g.setFill(neC.deriveColor(0,1,1,0.55));
         g.save();
         g.translate(cx, cy);
@@ -990,9 +990,11 @@ public class TrafficSimulationUI extends Application {
         double x = s.getPosition().x, y = s.getPosition().y;
         g.save();
         g.translate(x, y);
-        // Always rotate canvas to travel direction — works for both BASIC and GRAPHICS.
-        // Sprites are drawn at 0° (EAST-facing), canvas rotation handles orientation.
-        g.rotate(Math.toDegrees(s.getRotation()));
+        // BASIC mode: rotate canvas to travel direction so the rectangle faces correctly.
+        // GRAPHICS mode: no canvas rotation — the directional sprite already faces the right way.
+        if (renderMode == RenderMode.BASIC) {
+            g.rotate(Math.toDegrees(s.getRotation()));
+        }
         double scale = currentMode == ScenarioMode.GRID ? 0.72 : 1.08;
         g.scale(scale, scale);
 
@@ -1036,8 +1038,8 @@ public class TrafficSimulationUI extends Application {
             g.fillText(s.getBasicLabel(), -bL*0.22, 3);
 
         } else {
-            // ── GRAPHICS mode: sprite at 0° (EAST), canvas already rotated ──
-            Image sprite = SpriteLoader.get(getEastSpriteKey(s.getSpriteKey()));
+            // ── GRAPHICS mode: pick the correct directional sprite based on rotation ──
+            Image sprite = SpriteLoader.get(getDirectionalSpriteKey(s.getSpriteKey(), s.getRotation()));
             if (sprite != null) {
                 // Use the vehicle's render length, preserve sprite aspect ratio for height
                 double drawW = s.getLength();
@@ -1084,6 +1086,29 @@ public class TrafficSimulationUI extends Application {
             return RenderAssetKey.valueOf(baseName + "_EAST");
         } catch (IllegalArgumentException e) {
             return base;
+        }
+    }
+
+    /**
+     * Returns the directional sprite key that best matches the given rotation angle (radians).
+     * Rotation 0 = EAST, PI/2 = SOUTH, PI = WEST, -PI/2 = NORTH (JavaFX screen coords: y increases downward).
+     */
+    private RenderAssetKey getDirectionalSpriteKey(RenderAssetKey base, double rotation) {
+        String baseName = base.name().replaceAll(
+            "_(EAST|NORTH|SOUTH|WEST|NORTHEAST|NORTHWEST|SOUTHEAST|SOUTHWEST|TOP)$", "");
+        // Normalise angle to [0, 2π)
+        double angle = rotation % (2 * Math.PI);
+        if (angle < 0) angle += 2 * Math.PI;
+        // 8-direction quantisation: each sector is 45° wide
+        // 0=EAST, 45=SOUTHEAST, 90=SOUTH, 135=SOUTHWEST, 180=WEST, 225=NORTHWEST, 270=NORTH, 315=NORTHEAST
+        String[] dirs = { "EAST", "SOUTHEAST", "SOUTH", "SOUTHWEST", "WEST", "NORTHWEST", "NORTH", "NORTHEAST" };
+        int sector = (int) Math.round(angle / (Math.PI / 4)) % 8;
+        String suffix = dirs[sector];
+        try {
+            return RenderAssetKey.valueOf(baseName + "_" + suffix);
+        } catch (IllegalArgumentException e) {
+            // Fallback to EAST if the directional variant doesn't exist
+            return getEastSpriteKey(base);
         }
     }
 
@@ -1359,20 +1384,20 @@ public class TrafficSimulationUI extends Application {
                     new Vector2D(cx + lw, cy - lw),   // curve stays in approach lane x
                     new Vector2D(cx - near, cy - lw),
                     new Vector2D(-20, cy - lw)), 1, "light-NS", "S", "W");
-            case 2 -> // E→S: approach on right lane (y = cy-lw), exit on right of S-road (x = cx+lw)
+            case 2 -> // E→S: approach on right lane (y = cy-lw), exit on left of S-road (x = cx-lw, southbound)
                 new VehiclePath("e-s-turn", List.of(
                     new Vector2D(CANVAS_W + 20, cy - lw),
                     new Vector2D(cx + near, cy - lw),
-                    new Vector2D(cx + lw, cy - lw),   // curve stays in approach lane y
-                    new Vector2D(cx + lw, cy + near),
-                    new Vector2D(cx + lw, CANVAS_H + 20)), 1, "light-EW", "E", "S");
-            default -> // W→N: approach on right lane (y = cy+lw), exit on left of N-road (x = cx-lw)
+                    new Vector2D(cx - lw, cy - lw),   // curve crosses intersection to southbound lane
+                    new Vector2D(cx - lw, cy + near),
+                    new Vector2D(cx - lw, CANVAS_H + 20)), 1, "light-EW", "E", "S");
+            default -> // W→N: approach on right lane (y = cy+lw), exit on right of N-road (x = cx+lw, northbound)
                 new VehiclePath("w-n-turn", List.of(
                     new Vector2D(-20, cy + lw),
                     new Vector2D(cx - near, cy + lw),
-                    new Vector2D(cx - lw, cy + lw),   // curve stays in approach lane y
-                    new Vector2D(cx - lw, cy - near),
-                    new Vector2D(cx - lw, -20)), 1, "light-EW", "W", "N");
+                    new Vector2D(cx + lw, cy + lw),   // curve crosses intersection to northbound lane
+                    new Vector2D(cx + lw, cy - near),
+                    new Vector2D(cx + lw, -20)), 1, "light-EW", "W", "N");
         };
     }
 

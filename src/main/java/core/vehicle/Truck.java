@@ -34,7 +34,7 @@ public class Truck extends Vehicle {
                 .spriteKey(RenderAssetKey.TRUCK_EAST)
                 .defaultMaxSpeed(55)
                 .defaultAcceleration(15)        // gia tốc chậm
-                .defaultLength(72)              // dài nhất trong mô phỏng
+                .defaultLength(50)              // dài nhất trong mô phỏng
                 .defaultWidth(20)
                 .defaultRenderLength(57)
                 .defaultRenderWidth(57)

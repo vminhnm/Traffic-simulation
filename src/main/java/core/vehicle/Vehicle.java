@@ -5,6 +5,7 @@ import java.util.List;
 import core.driver.DriverBehavior;
 import core.driver.DrivingDecision;
 import core.road.VehiclePath;
+import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import util.Vector2D;
 
@@ -133,7 +134,7 @@ public abstract class Vehicle implements Movable {
         DrivingDecision decision = driverBehavior.decide(this, world);
 
         // 2. Áp dụng quyết định
-        applyDecision(decision, deltaTime);
+        applyDecision(decision, deltaTime, world);
 
         // 3. Bám theo path
         if (!stopped) {
@@ -155,8 +156,10 @@ public abstract class Vehicle implements Movable {
     private static final double DEADLOCK_TIMEOUT = 3.0;
     /** Cờ đánh dấu xe đang ở chế độ "phá deadlock" — nhích từ từ về phía trước. */
     private boolean deadlockEscape = false;
+    /** Shared rule evaluator — stateless, safe to reuse. */
+    private static final TrafficRuleEvaluator TRAFFIC_RULES = new TrafficRuleEvaluator();
 
-    protected void applyDecision(DrivingDecision decision, double deltaTime) {
+    protected void applyDecision(DrivingDecision decision, double deltaTime, SimulationWorld world) {
         stopped  = false;
         yielding = false;
 
@@ -191,7 +194,7 @@ public abstract class Vehicle implements Movable {
                 stoppedTimer   = 0;
                 deadlockEscape = false;
                 double target = decision.getTargetSpeed();
-                currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
+                currentSpeed = Math.max(currentSpeed - acceleration * deltaTime, target);
             }
             case STOP -> {
                 currentSpeed = 0;
@@ -202,7 +205,9 @@ public abstract class Vehicle implements Movable {
                     stoppedTimer = -999; // reset để không phát liên tục
                 }
                 // Phá deadlock: nếu dừng quá DEADLOCK_TIMEOUT giây → nhích thoát
-                if (stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY) {
+                // Nhưng KHÔNG nhích khi đang chờ đèn đỏ — tránh lỗi xe nhích ở vạch dừng
+                boolean atRedLight = TRAFFIC_RULES.mustStopAtRedLight(this, world);
+                if (!atRedLight && stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY) {
                     deadlockEscape = true;
                     stopped        = false;
                     currentSpeed   = maxSpeed * 0.1; // nhích chậm
