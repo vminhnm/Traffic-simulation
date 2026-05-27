@@ -133,12 +133,18 @@ public final class TrafficRuleEvaluator {
         String pathId = self.getPath().getId();
         Vector2D pos  = self.getPosition();
 
+        // Lateral distance threshold: vehicles on adjacent parallel lanes should not block each other
+        // (their path IDs differ by lane index but they share the same road segment)
+        final double SAME_LANE_LATERAL_THRESHOLD = 30.0; // px — same lane if within this lateral distance
+
         // ── 1. Xe cùng path ──────────────────────────────────────────
         double samePath = world.getVehicles().stream()
                 .filter(v -> v != self)
                 .filter(v -> v.getPath().getId().equals(pathId))
                 .filter(v -> v.getWaypointIndex() >= self.getWaypointIndex())
                 .filter(v -> isAheadOnPath(self, v))
+                // Only count vehicles that are laterally close (same lane, not the adjacent lane)
+                .filter(v -> isLaterallySameLane(self, v, SAME_LANE_LATERAL_THRESHOLD))
                 .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
                 .map(front -> {
                     double centerDist = front.getPosition().distanceTo(pos);
@@ -193,6 +199,29 @@ public final class TrafficRuleEvaluator {
         // self.id nhỏ hơn → self được đi → loại bỏ other khỏi danh sách cản
         int cmp = self.getId().compareTo(other.getId());
         return cmp < 0;
+    }
+
+    /**
+     * Returns true if other vehicle is laterally close enough to self
+     * to be considered in the same lane (not an adjacent parallel lane).
+     */
+    private boolean isLaterallySameLane(Vehicle self, Vehicle other, double threshold) {
+        Vector2D selfDir = self.getVelocity();
+        if (selfDir.length() < 1e-9) {
+            int nextIdx = self.getWaypointIndex();
+            if (nextIdx < self.getPath().getWaypoints().size()) {
+                selfDir = self.getPath().getWaypoints().get(nextIdx).subtract(self.getPosition());
+            } else {
+                return true; // can't tell, assume same lane
+            }
+        }
+        Vector2D normalizedDir = selfDir.normalize();
+        Vector2D toOther = other.getPosition().subtract(self.getPosition());
+        // Lateral distance = magnitude of component perpendicular to travel direction
+        double along = normalizedDir.dot(toOther);
+        double lateralSq = toOther.length() * toOther.length() - along * along;
+        double lateral = lateralSq > 0 ? Math.sqrt(lateralSq) : 0;
+        return lateral < threshold;
     }
 
     /**
