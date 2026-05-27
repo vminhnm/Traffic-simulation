@@ -150,14 +150,35 @@ public abstract class Vehicle implements Movable {
      * EmergencyDriver bỏ qua giới hạn tốc độ).
      */
     private double stoppedTimer = 0;
-    private static final double HORN_DELAY = 5.0; // giây dừng trước khi bấm còi
+    private static final double HORN_DELAY     = 5.0; // giây dừng trước khi bấm còi
+    /** Thời gian dừng tối đa trước khi tự động nhích để phá deadlock (giây). */
+    private static final double DEADLOCK_TIMEOUT = 3.0;
+    /** Cờ đánh dấu xe đang ở chế độ "phá deadlock" — nhích từ từ về phía trước. */
+    private boolean deadlockEscape = false;
+
     protected void applyDecision(DrivingDecision decision, double deltaTime) {
         stopped  = false;
         yielding = false;
 
+        // ── Kiểm tra deadlock timeout ────────────────────────────────
+        // Nếu xe nhận lệnh STOP quá lâu mà không phải do đèn đỏ,
+        // kích hoạt chế độ thoát deadlock: nhích chậm về phía trước.
+        if (decision.getAction() == core.driver.DrivingAction.STOP && deadlockEscape) {
+            // Đang thoát deadlock: tăng tốc chậm, bỏ qua lệnh STOP này
+            currentSpeed = Math.min(currentSpeed + acceleration * 0.5 * deltaTime, maxSpeed * 0.3);
+            stopped = false;
+            // Kết thúc chế độ escape sau khi xe đã di chuyển đủ xa
+            if (currentSpeed > maxSpeed * 0.2) {
+                deadlockEscape = false;
+                stoppedTimer   = 0;
+            }
+            return;
+        }
+
         switch (decision.getAction()) {
             case ACCELERATE, EMERGENCY_PASS -> {
-                stoppedTimer = 0; // reset
+                stoppedTimer   = 0;
+                deadlockEscape = false;
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 currentSpeed = Math.min(currentSpeed, maxSpeed * speedMultiplier());
@@ -167,7 +188,8 @@ public abstract class Vehicle implements Movable {
                 else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
             }
             case BRAKE -> {
-                stoppedTimer = 0;
+                stoppedTimer   = 0;
+                deadlockEscape = false;
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
             }
@@ -178,6 +200,12 @@ public abstract class Vehicle implements Movable {
                 if (stoppedTimer >= HORN_DELAY) {
                     sound.SoundManager.play(sound.SoundType.HORN_SHORT);
                     stoppedTimer = -999; // reset để không phát liên tục
+                }
+                // Phá deadlock: nếu dừng quá DEADLOCK_TIMEOUT giây → nhích thoát
+                if (stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY) {
+                    deadlockEscape = true;
+                    stopped        = false;
+                    currentSpeed   = maxSpeed * 0.1; // nhích chậm
                 }
             }
             case YIELD -> {
@@ -236,7 +264,7 @@ public abstract class Vehicle implements Movable {
                 if (angleDiff > Math.PI) angleDiff = 2 * Math.PI - angleDiff;
                 if (angleDiff > Math.toRadians(20)) {
                     sound.SoundManager.play(sound.SoundType.TURN_SIGNAL);
-                }
+            }
             } else {
                 finished = true;
             }
@@ -297,11 +325,14 @@ public abstract class Vehicle implements Movable {
         return RenderableState.builder(id)
                 .position(renderPos)
                 .rotation(rotation)
-                .length(length)
-                .width(width)
+                .length(profile.getDefaultRenderLength())
+                .width(profile.getDefaultRenderWidth())
+                .physicalLength(profile.getDefaultLength())
+                .physicalWidth(profile.getDefaultWidth())
                 .basicLabel(profile.getBasicLabel())
                 .bodyColor(profile.getBodyColor())
                 .roofColor(profile.getRoofColor())
+                //.spritePath(profile.getSpritePath())
                 .spriteKey(profile.getSpriteKey())
                 .isPriority(isPriorityVehicle())
                 .sirenFlash(flashState && isPriorityVehicle())

@@ -1,18 +1,11 @@
 package core.vehicle;
 
-<<<<<<< HEAD
-import core.driver.DriverBehavior;
-import core.driver.EmergencyDriver;
-import core.road.VehiclePath;
-import java.awt.Color;
-=======
 import java.awt.Color;
 
 import core.driver.DriverBehavior;
 import core.driver.EmergencyDriver;
 import core.road.VehiclePath;
 import graphics.sprite.RenderAssetKey;
->>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
 import sound.SoundType;
 
 /**
@@ -50,16 +43,14 @@ public class Ambulance extends PriorityVehicle {
                 .basicLabel("Ambu")
                 .bodyColor(Color.WHITE)
                 .roofColor(new Color(200, 0, 0))        // đỏ
-<<<<<<< HEAD
-                .spritePath("assets/sprites/ambulance.png")
-=======
                 //.spritePath("assets/sprites/ambulance.png")
                 .spriteKey(RenderAssetKey.AMBULANCE_EAST)
->>>>>>> 11a269e5cac08a2da59c3057d2327b555271973e
                 .defaultMaxSpeed(120)
                 .defaultAcceleration(60)
                 .defaultLength(44)
                 .defaultWidth(20)
+                .defaultRenderLength(57)
+                .defaultRenderWidth(57)
                 .engineSound(SoundType.ENGINE_CAR)
                 .hornSound(SoundType.HORN_LONG)
                 .sirenSound(SoundType.AMBULANCE_SIREN)

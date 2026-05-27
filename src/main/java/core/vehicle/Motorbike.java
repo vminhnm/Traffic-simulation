@@ -31,11 +31,14 @@ public class Motorbike extends Vehicle {
                 .basicLabel("Moto")
                 .bodyColor(new Color(255, 140, 0))   // cam
                 .roofColor(new Color(180, 90, 0))
+                //.spritePath("assets/sprites/motorbike.png")
                 .spriteKey(RenderAssetKey.MOTORBIKE_EAST)
                 .defaultMaxSpeed(110)
                 .defaultAcceleration(70)
-                .defaultLength(22)
-                .defaultWidth(10)
+                .defaultLength(30)
+                .defaultWidth(15)
+                .defaultRenderLength(103)
+                .defaultRenderWidth(103)
                 .engineSound(SoundType.ENGINE_MOTORBIKE)
                 .hornSound(SoundType.HORN_SHORT)
                 .build();

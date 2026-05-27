@@ -31,6 +31,7 @@ public final class VehicleProfile {
     /** Màu mái / cabin xe. */
     private final Color  roofColor;
     /** Đường dẫn tương đối tới file sprite (Graphics mode). */
+    //private final String spritePath;
     private final RenderAssetKey spriteKey;
 
     // ── Vật lý ───────────────────────────────────────────────────────
@@ -38,10 +39,14 @@ public final class VehicleProfile {
     private final double defaultMaxSpeed;
     /** Gia tốc (px/s²). */
     private final double defaultAcceleration;
-    /** Chiều dài xe (px). */
+    /** Kích thước va chạm: chiều dài xe (px). */
     private final double defaultLength;
-    /** Chiều rộng xe (px). */
+    /** Kích thước va chạm: chiều rộng xe (px). */
     private final double defaultWidth;
+    /** Kích thước hiển thị: chiều dài xe (px). */
+    private final double defaultRenderLength;
+    /** Kích thước hiển thị: chiều rộng xe (px). */
+    private final double defaultRenderWidth;
 
     // ── Âm thanh ─────────────────────────────────────────────────────
     /** Âm thanh động cơ khi xe chạy. */
@@ -57,11 +62,14 @@ public final class VehicleProfile {
         this.basicLabel          = b.basicLabel;
         this.bodyColor           = b.bodyColor;
         this.roofColor           = b.roofColor;
+        //this.spritePath          = b.spritePath;
         this.spriteKey           = b.spriteKey;
         this.defaultMaxSpeed     = b.defaultMaxSpeed;
         this.defaultAcceleration = b.defaultAcceleration;
         this.defaultLength       = b.defaultLength;
         this.defaultWidth        = b.defaultWidth;
+        this.defaultRenderLength = b.defaultRenderLength < 0 ? b.defaultLength : b.defaultRenderLength;
+        this.defaultRenderWidth  = b.defaultRenderWidth < 0 ? b.defaultWidth : b.defaultRenderWidth;
         this.engineSound         = b.engineSound;
         this.hornSound           = b.hornSound;
         this.sirenSound          = b.sirenSound;
@@ -74,11 +82,14 @@ public final class VehicleProfile {
     public String  getBasicLabel()          { return basicLabel;          }
     public Color   getBodyColor()           { return bodyColor;           }
     public Color   getRoofColor()           { return roofColor;           }
+    //public String  getSpritePath()          { return spritePath;          }
     public RenderAssetKey getSpriteKey()    { return spriteKey;           }
     public double  getDefaultMaxSpeed()     { return defaultMaxSpeed;     }
     public double  getDefaultAcceleration() { return defaultAcceleration; }
     public double  getDefaultLength()       { return defaultLength;       }
     public double  getDefaultWidth()        { return defaultWidth;        }
+    public double  getDefaultRenderLength() { return defaultRenderLength; }
+    public double  getDefaultRenderWidth()  { return defaultRenderWidth;  }
     public SoundType getEngineSound()       { return engineSound;         }
     public SoundType getHornSound()         { return hornSound;           }
     public SoundType getSirenSound()        { return sirenSound;          }
@@ -101,11 +112,14 @@ public final class VehicleProfile {
         private String   basicLabel          = "?";
         private Color    bodyColor           = Color.GRAY;
         private Color    roofColor           = Color.DARK_GRAY;
+       // private String   spritePath          = "";
         private RenderAssetKey spriteKey       = null;
         private double   defaultMaxSpeed     = 80;
         private double   defaultAcceleration = 40;
         private double   defaultLength       = 40;
         private double   defaultWidth        = 20;
+        private double   defaultRenderLength = -1;
+        private double   defaultRenderWidth  = -1;
         private SoundType engineSound        = null;
         private SoundType hornSound          = null;
         private SoundType sirenSound         = null;
@@ -116,11 +130,14 @@ public final class VehicleProfile {
         public Builder basicLabel(String v)          { basicLabel          = v; return this; }
         public Builder bodyColor(Color v)            { bodyColor           = v; return this; }
         public Builder roofColor(Color v)            { roofColor           = v; return this; }
+        //public Builder spritePath(String v)          { spritePath          = v; return this; }
         public Builder spriteKey(RenderAssetKey v)   { spriteKey           = v; return this; }
         public Builder defaultMaxSpeed(double v)     { defaultMaxSpeed     = v; return this; }
         public Builder defaultAcceleration(double v) { defaultAcceleration = v; return this; }
         public Builder defaultLength(double v)       { defaultLength       = v; return this; }
         public Builder defaultWidth(double v)        { defaultWidth        = v; return this; }
+        public Builder defaultRenderLength(double v) { defaultRenderLength = v; return this; }
+        public Builder defaultRenderWidth(double v)  { defaultRenderWidth  = v; return this; }
         public Builder engineSound(SoundType v)      { engineSound         = v; return this; }
         public Builder hornSound(SoundType v)        { hornSound           = v; return this; }
         public Builder sirenSound(SoundType v)       { sirenSound          = v; return this; }

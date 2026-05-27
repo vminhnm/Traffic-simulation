@@ -17,11 +17,14 @@ public final class RenderableState {
     private final String    id;
     private final Vector2D  position;      // tọa độ tâm xe (world space)
     private final double    rotation;      // góc xoay (radian)
-    private final double    length;        // chiều dài (px)
-    private final double    width;         // chiều rộng (px)
+    private final double    length;        // render size (px) — dùng cho GRAPHICS
+    private final double    width;         // render size (px) — dùng cho GRAPHICS
+    private final double    physicalLength; // kích thước vật lý thực (px) — dùng cho BASIC
+    private final double    physicalWidth;
     private final String    basicLabel;    // nhãn chế độ Basic ("Car", "Ambu"…)
     private final Color     bodyColor;
     private final Color     roofColor;
+    //private final String    spritePath;    // đường dẫn sprite (chế độ Graphics)
     private final RenderAssetKey spriteKey; // khóa sprite (chế độ Graphics)
     private final boolean   isPriority;    // cần vẽ đèn nháy?
     private final boolean   sirenFlash;    // trạng thái nháy đèn hiện tại
@@ -36,9 +39,12 @@ public final class RenderableState {
         this.rotation    = b.rotation;
         this.length      = b.length;
         this.width       = b.width;
+        this.physicalLength = b.physicalLength;
+        this.physicalWidth  = b.physicalWidth;
         this.basicLabel  = b.basicLabel;
         this.bodyColor   = b.bodyColor;
         this.roofColor   = b.roofColor;
+        //this.spritePath  = b.spritePath;
         this.spriteKey   = b.spriteKey;
         this.isPriority  = b.isPriority;
         this.sirenFlash  = b.sirenFlash;
@@ -51,11 +57,14 @@ public final class RenderableState {
     public String   getId()          { return id;          }
     public Vector2D getPosition()    { return position;    }
     public double   getRotation()    { return rotation;    }
-    public double   getLength()      { return length;      }
-    public double   getWidth()       { return width;       }
+    public double   getLength()      { return length;         }
+    public double   getWidth()       { return width;          }
+    public double   getPhysicalLength() { return physicalLength; }
+    public double   getPhysicalWidth()  { return physicalWidth;  }
     public String   getBasicLabel()  { return basicLabel;  }
     public Color    getBodyColor()   { return bodyColor;   }
     public Color    getRoofColor()   { return roofColor;   }
+    //public String   getSpritePath()  { return spritePath;  }
     public RenderAssetKey getSpriteKey() { return spriteKey; } 
     public boolean  isPriority()     { return isPriority;  }
     public boolean  isSirenFlash()   { return sirenFlash;  }
@@ -74,9 +83,12 @@ public final class RenderableState {
         private double   rotation   = 0;
         private double   length     = 40;
         private double   width      = 20;
+        private double   physicalLength = 40;
+        private double   physicalWidth  = 20;
         private String   basicLabel = "?";
         private Color    bodyColor  = java.awt.Color.GRAY;
         private Color    roofColor  = java.awt.Color.DARK_GRAY;
+        //private String   spritePath = "";
         private RenderAssetKey spriteKey = null;
         private boolean  isPriority = false;
         private boolean  sirenFlash = false;
@@ -91,9 +103,12 @@ public final class RenderableState {
         public Builder rotation(double v)      { rotation    = v; return this; }
         public Builder length(double v)        { length      = v; return this; }
         public Builder width(double v)         { width       = v; return this; }
+        public Builder physicalLength(double v){ physicalLength = v; return this; }
+        public Builder physicalWidth(double v) { physicalWidth  = v; return this; }
         public Builder basicLabel(String v)    { basicLabel  = v; return this; }
         public Builder bodyColor(Color v)      { bodyColor   = v; return this; }
         public Builder roofColor(Color v)      { roofColor   = v; return this; }
+        //public Builder spritePath(String v)    { spritePath  = v; return this; }
         public Builder spriteKey(RenderAssetKey v) { spriteKey = v; return this; }
         public Builder isPriority(boolean v)   { isPriority  = v; return this; }
         public Builder sirenFlash(boolean v)   { sirenFlash  = v; return this; }

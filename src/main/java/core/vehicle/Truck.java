@@ -30,11 +30,14 @@ public class Truck extends Vehicle {
                 .basicLabel("Truck")
                 .bodyColor(new Color(100, 100, 140))  // xanh xám
                 .roofColor(new Color(70,  70, 110))
+                //.spritePath("assets/sprites/truck.png")
                 .spriteKey(RenderAssetKey.TRUCK_EAST)
                 .defaultMaxSpeed(55)
                 .defaultAcceleration(15)        // gia tốc chậm
                 .defaultLength(72)              // dài nhất trong mô phỏng
                 .defaultWidth(20)
+                .defaultRenderLength(57)
+                .defaultRenderWidth(57)
                 .engineSound(SoundType.ENGINE_TRUCK)
                 .hornSound(SoundType.HORN_LONG)
                 .build();

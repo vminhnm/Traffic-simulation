@@ -30,11 +30,14 @@ public class Bus extends Vehicle {
                 .basicLabel("Bus")
                 .bodyColor(new Color(255, 200, 0))    // vàng
                 .roofColor(new Color(200, 150, 0))
+                //.spritePath("assets/sprites/bus.png")
                 .spriteKey(RenderAssetKey.BUS_EAST)
                 .defaultMaxSpeed(65)
                 .defaultAcceleration(22)
-                .defaultLength(60)
+                .defaultLength(50)
                 .defaultWidth(18)
+                .defaultRenderLength(67)
+                .defaultRenderWidth(67)
                 .engineSound(SoundType.ENGINE_BUS)
                 .hornSound(SoundType.HORN_LONG)
                 .build();

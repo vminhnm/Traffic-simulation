@@ -28,7 +28,3 @@ bin/
 
 ### Mac OS ###
 .DS_Store
-
-### Maven ###
-target/
-*.jar

@@ -51,9 +51,12 @@ public class AggressiveDriver implements DriverBehavior {
                 }
 
                 // Different lane → stop if in range and not already moving out
+                // Different lane → stop only if on a DIFFERENT axis (e.g. NS vs EW)
+                if (isDifferentAxis(vehicle.getRotation(), pv.getRotation())) {
                 double dist = vehicle.getPosition().distanceTo(pv.getPosition());
                 if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
                     return DrivingDecision.stop();
+                }
                 }
             }
         }
@@ -69,9 +72,8 @@ public class AggressiveDriver implements DriverBehavior {
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;
 
         if (gap >= 0 && gap < safeDistance) {
-            // Càng gần xe trước (gap nhỏ) thì lực phanh phải càng MẠNH. Lỗi cũ đang tính ngược.
-            double urgency = 1.0 - Math.max(0, gap / safeDistance);
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * urgency);
+            double ratio = Math.max(0, gap / safeDistance);
+            return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.4);
         }
 
         // ── 4. Phóng nhanh hơn giới hạn ─────────────────────────────
@@ -80,4 +82,21 @@ public class AggressiveDriver implements DriverBehavior {
 
     @Override
     public String getStyleName() { return "Aggressive"; }
+
+    /**
+     * Returns true if the two rotations are on different axes
+     * (one is roughly N-S, the other roughly E-W).
+     * Same axis (NS vs NS, or EW vs EW) returns false — no need to stop.
+     */
+    private static boolean isDifferentAxis(double rotA, double rotB) {
+        // Normalise to 0–180° (collapse opposite directions onto same axis)
+        double a = Math.toDegrees(rotA) % 180;
+        double b = Math.toDegrees(rotB) % 180;
+        if (a < 0) a += 180;
+        if (b < 0) b += 180;
+        // NS ≈ 90°, EW ≈ 0° or 180°. Axes differ when angular distance > 45°.
+        double diff = Math.abs(a - b);
+        if (diff > 90) diff = 180 - diff;
+        return diff > 45;
+    }
 }
