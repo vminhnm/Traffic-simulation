@@ -64,6 +64,14 @@ public class AggressiveDriver implements DriverBehavior {
             return DrivingDecision.stop();
         }
 
+        // ── 2b. Kiểm tra xung đột giao lộ — hung hăng vẫn tránh đâm ─
+        if (RULES.hasIntersectionConflict(vehicle, world)) {
+            if (vehicle.isInIntersection()) {
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.3);
+            }
+            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.1);
+        }
+
         // ── 3. Khoảng cách bám sát ──────────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;

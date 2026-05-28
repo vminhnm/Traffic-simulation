@@ -351,6 +351,24 @@ public abstract class Vehicle implements Movable {
     public DriverBehavior getDriverBehavior() { return driverBehavior; }
     public double         getLateralOffset()  { return lateralOffset;  }
 
+    /**
+     * Xe có đang ở trong vùng giao lộ không?
+     * Điều kiện: đã vượt qua stopIndex và chưa đến waypoint cuối.
+     */
+    public boolean isInIntersection() {
+        return waypointIndex > path.getStopIndex() && !finished;
+    }
+
+    /**
+     * Xe có đang tiếp cận giao lộ (sắp vào) không?
+     * Dùng để biết xe cần chuẩn bị nhường đường bên trong.
+     * @param lookAheadDist khoảng cách tính trước (px)
+     */
+    public boolean isApproachingIntersection(double lookAheadDist) {
+        double dist = core.rule.TrafficRuleEvaluator.staticDistanceToStopLine(this);
+        return dist >= 0 && dist <= lookAheadDist;
+    }
+
     @Override
     public String toString() {
         return getClass().getSimpleName() + "[" + id + " @" + position + "]";

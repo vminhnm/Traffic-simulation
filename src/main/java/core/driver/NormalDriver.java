@@ -55,6 +55,16 @@ public class NormalDriver implements DriverBehavior {
             return DrivingDecision.stop();
         }
 
+        // ── 2b. Kiểm tra xung đột trong giao lộ (xe rẽ chéo) ────────
+        if (RULES.hasIntersectionConflict(vehicle, world)) {
+            // Nếu đã trong giao lộ: brake nhẹ để tránh đâm
+            // Nếu chưa vào: dừng trước vạch
+            if (vehicle.isInIntersection()) {
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.25);
+            }
+            return DrivingDecision.stop();
+        }
+
         // ── 3. Giữ khoảng cách xe trước ────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         
