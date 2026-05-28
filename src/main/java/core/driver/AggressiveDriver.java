@@ -56,8 +56,8 @@ public class AggressiveDriver implements DriverBehavior {
         {
             var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
             if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
-                // Aggressive: brake mạnh thay vì stop hẳn, nhưng gần như dừng
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.05);
+                // Dense intersections need a full stop to avoid side-impact crashes.
+                return DrivingDecision.stop();
             }
             if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
                 return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.65);

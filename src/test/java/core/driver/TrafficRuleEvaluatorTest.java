@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test;
 
 import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
+import core.vehicle.Ambulance;
 import core.vehicle.Car;
 import core.road.VehiclePath;
 import util.Vector2D;
@@ -40,6 +41,22 @@ public class TrafficRuleEvaluatorTest {
                 new Vector2D(startX, y),
                 new Vector2D(startX - 100, y),
                 new Vector2D(startX - 140, y - 40)), 1, null, "E", exitArm);
+    }
+
+    private VehiclePath northSouthConflictPath(String id) {
+        return new VehiclePath(id, List.of(
+                new Vector2D(12, -100),
+                new Vector2D(12, -60),
+                new Vector2D(12, 0),
+                new Vector2D(12, 100)), 1, null, "N", "S");
+    }
+
+    private VehiclePath westEastConflictPath(String id) {
+        return new VehiclePath(id, List.of(
+                new Vector2D(-100, -12),
+                new Vector2D(-60, -12),
+                new Vector2D(0, -12),
+                new Vector2D(100, -12)), 1, null, "W", "E");
     }
 
     @Test
@@ -144,5 +161,37 @@ public class TrafficRuleEvaluatorTest {
         double gap = evaluator.gapToFrontVehicle(eastWest, world);
 
         assertEquals(-1.0, gap, 1e-9, "Opposite traffic in the neighboring lane must not be treated as a front vehicle.");
+    }
+
+    @Test
+    void simultaneousCrossingApproachStopsOneVehicleBeforeIntersection() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        world.addIntersectionCenter(new Vector2D(0, 0));
+
+        Car first = new Car("car-a", northSouthConflictPath("ns"), new NormalDriver());
+        Car second = new Car("car-b", westEastConflictPath("we"), new NormalDriver());
+        world.addVehicle(first);
+        world.addVehicle(second);
+
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.NONE,
+                evaluator.getIntersectionConflictLevel(first, world));
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.STOP,
+                evaluator.getIntersectionConflictLevel(second, world));
+    }
+
+    @Test
+    void normalVehicleStopsForPriorityVehicleCrossingIntersection() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        world.addIntersectionCenter(new Vector2D(0, 0));
+
+        Car normal = new Car("car-normal", northSouthConflictPath("ns"), new NormalDriver());
+        Ambulance ambulance = new Ambulance("amb-1", westEastConflictPath("we"));
+        world.addVehicle(normal);
+        world.addVehicle(ambulance);
+
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.STOP,
+                evaluator.getIntersectionConflictLevel(normal, world));
     }
 }

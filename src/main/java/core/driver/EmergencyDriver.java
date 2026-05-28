@@ -44,6 +44,15 @@ public class EmergencyDriver implements DriverBehavior {
             return DrivingDecision.accelerate(vehicle.getMaxSpeed());
         }
 
+        // Even with siren active, do not enter an occupied conflict zone.
+        var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
+        if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
+            return DrivingDecision.stop();
+        }
+        if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
+            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.55);
+        }
+
         // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
         double gap = RULES.gapToFrontVehicle(vehicle, world);
 

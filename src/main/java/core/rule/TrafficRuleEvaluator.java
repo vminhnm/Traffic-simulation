@@ -32,6 +32,11 @@ public final class TrafficRuleEvaluator {
     private static final double LIGHT_CHECK_DISTANCE = 80.0;
     /** Khoảng cách (px) để coi là "đã vào vạch dừng" — không còn quay lại được. */
     private static final double COMMITTED_DISTANCE   = 10.0;
+    private static final double INTERSECTION_BOX_RADIUS = 62.0;
+    private static final double INTERSECTION_APPROACH_RADIUS = 120.0;
+    private static final double INTERSECTION_ROUTE_RADIUS = 92.0;
+    private static final double ARRIVAL_CONFLICT_WINDOW_SECONDS = 2.4;
+    private static final double ETA_TIE_EPSILON_SECONDS = 0.35;
 
     // ─────────────────────────────────────────────────────────────────
     //  Đèn giao thông
@@ -350,9 +355,6 @@ public final class TrafficRuleEvaluator {
         java.util.List<util.Vector2D> centers = world.getIntersectionCenters();
         if (centers.isEmpty()) return ConflictLevel.NONE;
 
-        final double BOX_R      = 62.0;  // px — bên trong hộp giao lộ (ROAD_HALF=50, diagonal~71)
-        final double APPROACH_R = 85.0;  // px — vùng tiếp cận trước vạch dừng
-
         util.Vector2D myPos = self.getEffectivePosition();
         util.Vector2D nearest = centers.stream()
                 .min(java.util.Comparator.comparingDouble(c -> myPos.distanceTo(c)))
@@ -360,75 +362,59 @@ public final class TrafficRuleEvaluator {
         if (nearest == null) return ConflictLevel.NONE;
 
         double myDist = myPos.distanceTo(nearest);
-        if (myDist > APPROACH_R) return ConflictLevel.NONE;
+        if (myDist > INTERSECTION_APPROACH_RADIUS) return ConflictLevel.NONE;
 
-        // Xe đã vượt qua hộp giao lộ và đang ra ngoài (exiting) → không còn trong vùng conflict
-        // isInIntersection=true nhưng myDist > BOX_R nghĩa là xe đã đi qua tâm, đang thoát ra
-        boolean iAmInside   = myDist <= BOX_R;
-        if (!iAmInside && self.isInIntersection()) return ConflictLevel.NONE;
+        boolean iAmInside = myDist <= INTERSECTION_BOX_RADIUS;
+        if (!iAmInside && isMovingAwayFromCenter(self, nearest)) return ConflictLevel.NONE;
 
         boolean iAmStraight = isGoingStraight(self.getPath().getEntryArm(), self.getPath().getExitArm());
-        String  myEntry     = self.getPath().getEntryArm();
+        String myEntry = self.getPath().getEntryArm();
 
         ConflictLevel worst = ConflictLevel.NONE;
 
         for (core.vehicle.Vehicle other : world.getVehicles()) {
-            if (other == self)      continue;
-            if (other.isCrashed())  continue;
-            if (other.isFinished()) continue;
+            if (other == self) continue;
+            if (other.isCrashed() || other.isFinished()) continue;
 
             String theirEntry = other.getPath().getEntryArm();
-            if (theirEntry.equals(myEntry)) continue; // cùng arm → cùng làn, không cắt nhau
+            if (theirEntry.equals(myEntry)) continue;
 
-            // Xe kia đang đèn đỏ/vàng và chưa vào hộp → đèn đã điều phối, bỏ qua
+            double theirDist = other.getEffectivePosition().distanceTo(nearest);
+            boolean theyInside = theirDist <= INTERSECTION_BOX_RADIUS;
+            if (theirDist > INTERSECTION_APPROACH_RADIUS && !theyInside) continue;
+            if (!theyInside && isMovingAwayFromCenter(other, nearest)) continue;
+
             LightColor theirLight = getApproachingLightColor(other, world);
-            if (theirLight != LightColor.GREEN && !other.isInIntersection()) continue;
-
-            double  theirDist    = other.getEffectivePosition().distanceTo(nearest);
-            boolean theyInside   = theirDist <= BOX_R;
-
-            // Xe kia đã vượt qua hộp và đang thoát ra → không còn là mối đe dọa
-            if (!theyInside && other.isInIntersection()) continue;
+            if (!other.isPriorityVehicle() && theirLight != LightColor.GREEN && !theyInside) {
+                continue;
+            }
 
             boolean theyStraight = isGoingStraight(theirEntry, other.getPath().getExitArm());
-
-            // Hai xe đi thẳng ngược chiều (N↔S hoặc E↔W) — dùng làn riêng, không đâm nhau
             if (isOpposite(myEntry, theirEntry) && iAmStraight && theyStraight) continue;
+            if (!pathsPhysicallyConflict(self, other, nearest)) continue;
 
-            // ── Xe kia đang trong hộp giao lộ ──────────────────────────────────────
             if (theyInside) {
-                if (iAmInside) {
-                    // Cả hai trong hộp cùng lúc:
-                    // Xe rẽ nhường xe thẳng; nếu cả hai đều rẽ → xe nào vào trước tiếp tục (YIELD)
-                    if (!iAmStraight && theyStraight) {
-                        // Tôi rẽ, họ thẳng → tôi phải STOP để tránh đâm
-                        return ConflictLevel.STOP;
-                    }
-                    // Tôi thẳng, họ rẽ → tôi có quyền ưu tiên → chỉ YIELD nhẹ đề phòng
-                    // Cả hai đều rẽ → YIELD nhẹ
-                    worst = ConflictLevel.YIELD;
-                } else {
-                    // Họ đang trong hộp, tôi đang tiếp cận → tôi phải STOP chờ
+                if (!iAmInside) return ConflictLevel.STOP;
+                if (shouldStopForConflict(self, other, iAmStraight, theyStraight, nearest)) {
                     return ConflictLevel.STOP;
                 }
-            } else {
-                // Xe kia đang tiếp cận (chưa vào hộp)
-                if (iAmInside) {
-                    // Tôi đang trong hộp, họ chưa vào → tôi có quyền ưu tiên, đi tiếp bình thường
-                    continue;
-                } else {
-                    // Cả hai đang tiếp cận — chỉ xe ĐANG RẼ mới nhường, xe thẳng có ưu tiên
-                    if (!iAmStraight) {
-                        // Tôi đang rẽ → nhường nếu xe kia (đi thẳng) gần hộp hơn hoặc xấp xỉ
-                        if (theyStraight && theirDist <= myDist + 20) {
-                            worst = ConflictLevel.STOP;
-                        }
-                        // Cả hai đều rẽ và khoảng cách xấp xỉ → YIELD nhẹ
-                        if (!theyStraight && Math.abs(theirDist - myDist) < 10) {
-                            if (worst == ConflictLevel.NONE) worst = ConflictLevel.YIELD;
-                        }
-                    }
-                    // Tôi đi thẳng → không nhường ai khi cả hai đang tiếp cận
+                worst = ConflictLevel.YIELD;
+                continue;
+            }
+
+            if (iAmInside) continue;
+
+            if (arrivalsOverlap(self, other, nearest)
+                    && shouldStopForConflict(self, other, iAmStraight, theyStraight, nearest)) {
+                return ConflictLevel.STOP;
+            }
+
+            if (!iAmStraight) {
+                if (theyStraight && theirDist <= myDist + 20) {
+                    return ConflictLevel.STOP;
+                }
+                if (!theyStraight && Math.abs(theirDist - myDist) < 10) {
+                    worst = ConflictLevel.YIELD;
                 }
             }
         }
@@ -455,6 +441,130 @@ public final class TrafficRuleEvaluator {
      */
     private boolean isGoingStraight(String entry, String exit) {
         return isOpposite(entry, exit);
+    }
+
+    /** Helpers for predictive intersection conflict checks. */
+    private boolean isMovingAwayFromCenter(Vehicle vehicle, Vector2D center) {
+        Vector2D dir = movementDirection(vehicle);
+        if (dir.length() < 1e-9) return false;
+
+        Vector2D fromCenter = vehicle.getEffectivePosition().subtract(center);
+        double dist = fromCenter.length();
+        if (dist <= INTERSECTION_BOX_RADIUS || dist < 1e-9) return false;
+
+        return dir.dot(fromCenter.normalize()) > 0.35;
+    }
+
+    private boolean arrivalsOverlap(Vehicle self, Vehicle other, Vector2D center) {
+        return Math.abs(estimatedTimeToIntersection(self, center)
+                - estimatedTimeToIntersection(other, center)) <= ARRIVAL_CONFLICT_WINDOW_SECONDS;
+    }
+
+    private boolean shouldStopForConflict(
+            Vehicle self, Vehicle other, boolean selfStraight, boolean otherStraight, Vector2D center) {
+        if (self.isPriorityVehicle() != other.isPriorityVehicle()) {
+            return other.isPriorityVehicle();
+        }
+
+        if (selfStraight != otherStraight) {
+            return !selfStraight && otherStraight;
+        }
+
+        double myEta = estimatedTimeToIntersection(self, center);
+        double theirEta = estimatedTimeToIntersection(other, center);
+        if (theirEta + ETA_TIE_EPSILON_SECONDS < myEta) return true;
+        if (myEta + ETA_TIE_EPSILON_SECONDS < theirEta) return false;
+
+        return self.getId().compareTo(other.getId()) > 0;
+    }
+
+    private double estimatedTimeToIntersection(Vehicle vehicle, Vector2D center) {
+        double distanceToBox = Math.max(0.0,
+                vehicle.getEffectivePosition().distanceTo(center) - INTERSECTION_BOX_RADIUS);
+        double expectedSpeed = Math.max(vehicle.getSpeed(), vehicle.getMaxSpeed() * 0.35);
+        return distanceToBox / Math.max(1.0, expectedSpeed);
+    }
+
+    private boolean pathsPhysicallyConflict(Vehicle first, Vehicle second, Vector2D center) {
+        java.util.List<Vector2D> firstRoute = futureRoute(first);
+        java.util.List<Vector2D> secondRoute = futureRoute(second);
+        if (firstRoute.size() < 2 || secondRoute.size() < 2) return false;
+
+        double clearance = (first.getWidth() + second.getWidth()) / 2.0 + 5.0;
+        for (int i = 0; i < firstRoute.size() - 1; i++) {
+            Vector2D a = firstRoute.get(i);
+            Vector2D b = firstRoute.get(i + 1);
+            if (!segmentNearCenter(a, b, center)) continue;
+
+            for (int j = 0; j < secondRoute.size() - 1; j++) {
+                Vector2D c = secondRoute.get(j);
+                Vector2D d = secondRoute.get(j + 1);
+                if (!segmentNearCenter(c, d, center)) continue;
+                if (segmentDistance(a, b, c, d) <= clearance) return true;
+            }
+        }
+        return false;
+    }
+
+    private java.util.List<Vector2D> futureRoute(Vehicle vehicle) {
+        java.util.ArrayList<Vector2D> points = new java.util.ArrayList<>();
+        points.add(vehicle.getPosition());
+
+        java.util.List<Vector2D> waypoints = vehicle.getPath().getWaypoints();
+        int start = Math.max(0, Math.min(vehicle.getWaypointIndex(), waypoints.size()));
+        for (int i = start; i < waypoints.size(); i++) {
+            Vector2D point = waypoints.get(i);
+            if (points.get(points.size() - 1).distanceTo(point) > 1e-6) {
+                points.add(point);
+            }
+        }
+        return points;
+    }
+
+    private boolean segmentNearCenter(Vector2D a, Vector2D b, Vector2D center) {
+        return pointToSegmentDistance(center, a, b) <= INTERSECTION_ROUTE_RADIUS;
+    }
+
+    private double segmentDistance(Vector2D a, Vector2D b, Vector2D c, Vector2D d) {
+        if (segmentsIntersect(a, b, c, d)) return 0.0;
+        return Math.min(
+                Math.min(pointToSegmentDistance(a, c, d), pointToSegmentDistance(b, c, d)),
+                Math.min(pointToSegmentDistance(c, a, b), pointToSegmentDistance(d, a, b)));
+    }
+
+    private double pointToSegmentDistance(Vector2D point, Vector2D a, Vector2D b) {
+        Vector2D ab = b.subtract(a);
+        double lenSq = ab.dot(ab);
+        if (lenSq < 1e-9) return point.distanceTo(a);
+
+        double t = point.subtract(a).dot(ab) / lenSq;
+        t = Math.max(0.0, Math.min(1.0, t));
+        Vector2D projection = a.add(ab.multiply(t));
+        return point.distanceTo(projection);
+    }
+
+    private boolean segmentsIntersect(Vector2D a, Vector2D b, Vector2D c, Vector2D d) {
+        double o1 = orientation(a, b, c);
+        double o2 = orientation(a, b, d);
+        double o3 = orientation(c, d, a);
+        double o4 = orientation(c, d, b);
+
+        if (o1 * o2 < 0 && o3 * o4 < 0) return true;
+        return Math.abs(o1) < 1e-9 && onSegment(a, c, b)
+                || Math.abs(o2) < 1e-9 && onSegment(a, d, b)
+                || Math.abs(o3) < 1e-9 && onSegment(c, a, d)
+                || Math.abs(o4) < 1e-9 && onSegment(c, b, d);
+    }
+
+    private double orientation(Vector2D a, Vector2D b, Vector2D c) {
+        return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+    }
+
+    private boolean onSegment(Vector2D a, Vector2D point, Vector2D b) {
+        return point.x >= Math.min(a.x, b.x) - 1e-9
+                && point.x <= Math.max(a.x, b.x) + 1e-9
+                && point.y >= Math.min(a.y, b.y) - 1e-9
+                && point.y <= Math.max(a.y, b.y) + 1e-9;
     }
 
     /**
