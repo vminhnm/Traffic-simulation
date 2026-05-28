@@ -189,12 +189,14 @@ public abstract class Vehicle implements Movable {
                 if (currentSpeed == 0) stopped = true;
             }
             case MERGE_BACK -> {
-                // Stay stopped while drifting lateralOffset back to 0
-                currentSpeed = 0;
-                stopped = true;
-                stoppedTimer = 0;
+                // Drift lateralOffset back to 0 while allowing slow forward movement.
+                // This lets vehicles that were displaced for the ambulance merge back
+                // to their lane centre AND still proceed after the light turns green.
+                double mergeSpeed = Math.max(maxSpeed * 0.3, 15.0);
+                currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, mergeSpeed);
                 if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - 15 * deltaTime);
                 else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
+                if (Math.abs(lateralOffset) < 0.5) lateralOffset = 0; // snap to centre, prevent drift
             }
             case CHANGE_LANE_LEFT -> {
                 double target = decision.getTargetSpeed();
@@ -214,7 +216,7 @@ public abstract class Vehicle implements Movable {
                 } else {
                     currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 }
-                lateralOffset = Math.max(lateralOffset + 25 * deltaTime, -50);
+                lateralOffset = Math.min(lateralOffset + 25 * deltaTime, 50);
             }
         }
     }

@@ -74,6 +74,7 @@ public class TrafficSimulationUI extends Application {
     private enum ScenarioMode { FOUR_WAY, THREE_WAY, FIVE_WAY, GRID }
     private enum CountdownMode { ALWAYS, LAST_10_SECONDS, HIDDEN }
     private ScenarioMode currentMode = ScenarioMode.FOUR_WAY;
+    private ComboBox<String> dirCombo;
     private RenderMode renderMode = RenderMode.BASIC;
     private CountdownMode countdownMode = CountdownMode.ALWAYS;
     private boolean autoLights = true;
@@ -454,8 +455,8 @@ public class TrafficSimulationUI extends Application {
         styleCombo(cbType);
 
         // Direction options depend on mode — rebuilt on reset
-        ComboBox<String> cbDir = new ComboBox<>();
-        rebuildDirCombo(cbDir);
+        dirCombo = new ComboBox<>();
+        rebuildDirCombo(dirCombo);
 
         ComboBox<String> cbDriver = new ComboBox<>();
         cbDriver.getItems().addAll("👍 Normal","😤 Aggressive","🚨 Emergency");
@@ -467,7 +468,7 @@ public class TrafficSimulationUI extends Application {
         btnAdd.setMaxWidth(Double.MAX_VALUE);
         btnAdd.setOnAction(e -> {
             String typeKey = typeKeys[cbType.getSelectionModel().getSelectedIndex()];
-            int dirIdx     = cbDir.getSelectionModel().getSelectedIndex();
+            int dirIdx     = dirCombo.getSelectionModel().getSelectedIndex();
             var path       = getPathByModeAndDir(dirIdx);
             var drv = switch (cbDriver.getSelectionModel().getSelectedIndex()) {
                 case 1 -> new AggressiveDriver();
@@ -479,7 +480,7 @@ public class TrafficSimulationUI extends Application {
 
         panel.getChildren().addAll(
             smallLbl("Loại xe:"), cbType,
-            smallLbl("Hướng đi:"), cbDir,
+            smallLbl("Hướng đi:"), dirCombo,
             smallLbl("Kiểu lái:"), cbDriver,
             btnAdd
         );
@@ -1562,6 +1563,7 @@ public class TrafficSimulationUI extends Application {
         engine.start(); lastNano=0;
         SoundManager.loop(SoundType.TRAFFIC_AMBIENCE);
         if (btnStartPause!=null) btnStartPause.setText("⏸ Tạm dừng");
+        if (dirCombo != null) rebuildDirCombo(dirCombo);
         log("🔄 Đặt lại — chế độ: " + modeName(currentMode));
     }
 

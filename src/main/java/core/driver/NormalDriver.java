@@ -44,10 +44,24 @@ public class NormalDriver implements DriverBehavior {
                     boolean sameEntry = vehicle.getPath().getEntryArm()
                             .equals(pv.getPath().getEntryArm());
                     if (sameEntry) {
-                        // Same road arm → dạt sang bên để nhường đường
+                        // Same road arm → try to shift sideways to clear the path.
                         DrivingDecision sideShift = sideShiftAwayFromPriority(
                                 vehicle, world, pv, yieldingSideSpeed(vehicle));
-                        return sideShift != null ? sideShift : DrivingDecision.stop();
+                        if (sideShift != null) return sideShift;
+
+                        // Cannot shift sideways (car is dead-centre in ambulance's path).
+                        // Drive forward to clear the ambulance — overrides red light,
+                        // because yielding to an emergency vehicle takes priority.
+                        double gap = RULES.gapToFrontVehicle(vehicle, world);
+                        double safeDistance = safeDistance(vehicle);
+                        if (gap < 0 || gap >= safeDistance) {
+                            return DrivingDecision.accelerate(vehicle.getMaxSpeed());
+                        }
+                        if (gap >= vehicle.getLength() * 0.8) {
+                            double ratio = Math.max(0, gap / safeDistance);
+                            return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.6);
+                        }
+                        return DrivingDecision.stop();
                     }
 
                     double dist = vehicle.getPosition().distanceTo(pv.getPosition());

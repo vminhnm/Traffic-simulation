@@ -147,21 +147,36 @@ public final class TrafficRuleEvaluator {
         Vector2D dir = movementDirection(self);
         if (dir.length() < 1e-9) return false;
 
-        Vector2D targetPos = effectivePositionAtOffset(self, targetOffset);
+        double currentOffset = self.getLateralOffset();
         double frontClear = Math.max(self.getLength() * 4.0, 120.0);
         double rearClear  = Math.max(self.getLength() * 1.5, 45.0);
+
+        // The lateral sweep spans from currentOffset to targetOffset.
+        // Any vehicle whose lateral position falls inside this sweep band is blocking.
+        double sweepMin = Math.min(currentOffset, targetOffset) - self.getWidth() / 2.0;
+        double sweepMax = Math.max(currentOffset, targetOffset) + self.getWidth() / 2.0;
+
+        // Use current position as the longitudinal reference for forward/rear checks.
+        Vector2D selfPos = self.getEffectivePosition();
+        Vector2D right   = new Vector2D(-dir.y, dir.x); // unit right vector perpendicular to dir
 
         return world.getVehicles().stream()
                 .filter(v -> v != self)
                 .filter(v -> !v.isCrashed() && !v.isFinished())
                 .noneMatch(other -> {
-                    Vector2D toOther = other.getEffectivePosition().subtract(targetPos);
+                    Vector2D toOther = other.getEffectivePosition().subtract(selfPos);
+
+                    // Longitudinal distance — must be within front/rear clearance
                     double forward = dir.dot(toOther);
                     if (forward < -rearClear || forward > frontClear) return false;
 
-                    Vector2D lateral = toOther.subtract(dir.multiply(forward));
-                    double lateralClearance = (self.getWidth() + other.getWidth()) / 2.0 + 2.0;
-                    return lateral.length() <= lateralClearance;
+                    // Lateral position of the other vehicle relative to self's centre line
+                    double otherLateral = right.dot(toOther);
+                    double halfOther    = other.getWidth() / 2.0;
+
+                    // Block if other vehicle overlaps the sweep band at all
+                    return otherLateral + halfOther > sweepMin
+                        && otherLateral - halfOther < sweepMax;
                 });
     }
 
