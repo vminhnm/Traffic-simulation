@@ -161,24 +161,24 @@ public abstract class Vehicle implements Movable {
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 currentSpeed = Math.min(currentSpeed, maxSpeed * speedMultiplier());
-                
-                // Khi tăng tốc bình thường, xe dần quay trở về tâm làn đường
-                if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - 15 * deltaTime);
-                else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
+                // Do NOT drift lateralOffset here — MERGE_BACK handles that separately
             }
+            case STOP -> {
+                currentSpeed = 0;
+                stopped = true;
+                stoppedTimer += deltaTime;
+                if (stoppedTimer >= HORN_DELAY) {
+                    sound.SoundManager.play(sound.SoundType.HORN_SHORT);
+                    stoppedTimer = -999;
+                }
+                // Do NOT drift lateralOffset here — MERGE_BACK handles that separately
+            }
+
             case BRAKE -> {
                 stoppedTimer = 0;
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
-            }
-            case STOP -> {
-                currentSpeed = 0;
-                stopped      = true;
-                stoppedTimer += deltaTime; // ← chỉ đếm khi dừng hẳn
-                if (stoppedTimer >= HORN_DELAY) {
-                    sound.SoundManager.play(sound.SoundType.HORN_SHORT);
-                    stoppedTimer = -999; // reset để không phát liên tục
-                }
+                // Do NOT drift lateralOffset here — MERGE_BACK handles that separately
             }
             case YIELD -> {
                 stoppedTimer = 0;
@@ -188,15 +188,33 @@ public abstract class Vehicle implements Movable {
                 lateralOffset = Math.min(lateralOffset + 20 * deltaTime, 15);
                 if (currentSpeed == 0) stopped = true;
             }
+            case MERGE_BACK -> {
+                // Stay stopped while drifting lateralOffset back to 0
+                currentSpeed = 0;
+                stopped = true;
+                stoppedTimer = 0;
+                if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - 15 * deltaTime);
+                else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
+            }
             case CHANGE_LANE_LEFT -> {
                 double target = decision.getTargetSpeed();
-                currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
-                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -50); // Dạt trái
+                // Brake while lane-changing so the vehicle actually slows
+                if (target < currentSpeed) {
+                    currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
+                } else {
+                    currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
+                }
+                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -50);
             }
             case CHANGE_LANE_RIGHT -> {
                 double target = decision.getTargetSpeed();
-                currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
-                lateralOffset = Math.min(lateralOffset + 25 * deltaTime, 50); // Dạt phải
+                // Brake while lane-changing so the vehicle actually slows
+                if (target < currentSpeed) {
+                    currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
+                } else {
+                    currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
+                }
+                lateralOffset = Math.max(lateralOffset + 25 * deltaTime, -50);
             }
         }
     }

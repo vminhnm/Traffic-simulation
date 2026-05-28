@@ -227,7 +227,7 @@ public class TrafficSimulationUI extends Application {
     private void seedGrid() {
         spawnAt("car", makeGridPath(0), 0);
         spawnAt("bus", makeGridPath(1), 0);
-        spawnAt("car", makeGridPath(2), 0);
+        //spawnAt("car", makeGridPath(2), 0);
         spawnAt("truck", makeGridPath(3), 0);
         spawnAt("motorbike", makeGridPath(4), 0);
         spawnAt("ambulance", makeGridPath(5), 0);

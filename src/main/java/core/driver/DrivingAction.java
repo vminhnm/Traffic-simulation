@@ -11,5 +11,6 @@ public enum DrivingAction {
     YIELD,            // nhường đường
     EMERGENCY_PASS,   // vượt khẩn cấp (xe ưu tiên)
     CHANGE_LANE_LEFT, // vượt / chuyển làn trái
-    CHANGE_LANE_RIGHT // vượt / chuyển làn phải / dạt vào lề
+    CHANGE_LANE_RIGHT, // vượt / chuyển làn phải / dạt vào lề
+    MERGE_BACK        // drift lateralOffset back to 0 while staying stopped
 }

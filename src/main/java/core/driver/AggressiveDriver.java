@@ -41,14 +41,13 @@ public class AggressiveDriver implements DriverBehavior {
                 String myPathId = vehicle.getPath().getId();
                 String theirPathId = pv.getPath().getId();
 
-                // Extract lane type (first 2-3 chars before numbers)
-                String myLaneType = myPathId.replaceAll("[0-9]", "");
-                String theirLaneType = theirPathId.replaceAll("[0-9]", "");
-
-                // Same lane → move out
-                if (myLaneType.equals(theirLaneType)) {
-                    return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.3);
+                String myEntry    = vehicle.getPath().getEntryArm();
+                String theirEntry = pv.getPath().getEntryArm();
+                if (myEntry.equals(theirEntry)) {
+                    // Same road arm → move out of the lane
+                    return DrivingDecision.changeLaneLeft(vehicle.getAcceleration() * 0.3);
                 }
+
 
                 // Different lane → stop if in range and not already moving out
                 double dist = vehicle.getPosition().distanceTo(pv.getPosition());
