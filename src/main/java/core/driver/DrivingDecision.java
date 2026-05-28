@@ -53,6 +53,10 @@ public final class DrivingDecision {
         return new DrivingDecision(DrivingAction.CHANGE_LANE_RIGHT, targetSpeed);
     }
 
+    public static DrivingDecision mergeBack() {
+        return new DrivingDecision(DrivingAction.MERGE_BACK, 0);
+    }
+
     // ── Getters ─────────────────────────────────────────────────────
 
     public DrivingAction getAction()    { return action;      }

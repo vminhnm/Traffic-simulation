@@ -149,7 +149,7 @@ public final class TrafficRuleEvaluator {
         return lateral.length() <= sameLaneThreshold;
     }
 
-    private Vector2D movementDirection(Vehicle vehicle) {
+    public Vector2D movementDirection(Vehicle vehicle) {
         Vector2D dir = vehicle.getVelocity();
         if (dir.length() >= 1e-9) return dir.normalize();
 
@@ -163,87 +163,16 @@ public final class TrafficRuleEvaluator {
     }
 
     // ─────────────────────────────────────────────────────────────────
-    //  Vượt xe (Overtake)
-    // ─────────────────────────────────────────────────────────────────
-
-    /**
-     * Xe có thể vượt không?
-     * Điều kiện: (1) có xe phía trước chậm hơn ngưỡng, (2) đường bên trái trống,
-     * (3) xe chưa đang lệch (lateralOffset gần 0), (4) không đang trong giao lộ.
-     */
-    public boolean canOvertake(Vehicle self, SimulationWorld world) {
-        // Không vượt khi đang ở trong/gần giao lộ
-        if (self.isInIntersection()) return false;
-        if (distanceToStopLine(self) < 60) return false;
-
-        // Chỉ vượt khi lateralOffset gần tâm làn
-        if (Math.abs(self.getLateralOffset()) > 8) return false;
-
-        double gap = gapToFrontVehicle(self, world);
-        if (gap < 0) return false; // Không có xe trước → không cần vượt
-
-        // Tìm xe phía trước
-        Vector2D pos = self.getEffectivePosition();
-        var frontOpt = world.getVehicles().stream()
-                .filter(v -> v != self)
-                .filter(v -> isAheadInSameLane(self, v))
-                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)));
-        if (frontOpt.isEmpty()) return false;
-
-        Vehicle front = frontOpt.get();
-        // Chỉ vượt nếu xe trước đang chậm hơn đáng kể
-        double slowThreshold = self.getMaxSpeed() * 0.6;
-        if (front.getSpeed() >= slowThreshold) return false;
-
-        // Kiểm tra đường bên trái trống: tìm xe trong vùng bên trái
-        return isSideClear(self, world, -1);
-    }
-
-    /**
-     * Kiểm tra bên trái (side=-1) hoặc bên phải (side=+1) có trống không.
-     * Trả về true nếu không có xe nào trong vùng nguy hiểm khi chuyển làn.
-     */
-    public boolean isSideClear(Vehicle self, SimulationWorld world, int side) {
-        Vector2D dir   = movementDirection(self);
-        if (dir.length() < 1e-9) return false;
-
-        // Vector vuông góc sang bên (side=-1 là trái, +1 là phải)
-        Vector2D right  = new Vector2D(-dir.y, dir.x); // vector quay phải 90°
-        Vector2D lateral = right.multiply(side);        // side=-1 → trái
-
-        Vector2D myPos  = self.getEffectivePosition();
-        double   checkOffset = (self.getWidth() + 10) * 2.0;
-        double   checkLength = self.getLength() * 3.5;
-
-        for (Vehicle other : world.getVehicles()) {
-            if (other == self) continue;
-            if (other.isCrashed() || other.isFinished()) continue;
-
-            Vector2D toOther = other.getEffectivePosition().subtract(myPos);
-            double sideComp  = toOther.dot(lateral);
-            double fwdComp   = toOther.dot(dir);
-
-            // Xe kia phải ở về phía bên cần kiểm tra
-            if (sideComp < 5 || sideComp > checkOffset) continue;
-            // Trong khoảng dọc ±checkLength quanh xe mình
-            if (Math.abs(fwdComp) > checkLength) continue;
-
-            return false; // Có xe → không an toàn
-        }
-        return true;
-    }
-
-    // ─────────────────────────────────────────────────────────────────
     //  Xe ưu tiên
     // ─────────────────────────────────────────────────────────────────
 
     /**
      * Xe hiện tại có phải nhường đường cho xe ưu tiên nào đó không?
-     * Điều kiện: xe ưu tiên đang bật sirên VÀ xe hiện tại đang chắn đường
-     * (nằm trong cùng làn phía trước xe ưu tiên, trong bán kính sirên).
+     * Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
+     * và đang tiến gần xe hiện tại.
      */
     public boolean shouldYieldToPriorityVehicle(Vehicle self, SimulationWorld world) {
-        if (self.isPriorityVehicle()) return false;   // xe ưu tiên không nhường nhau
+        if (self.isPriorityVehicle()) return false;
 
         return world.getVehicles().stream()
                 .filter(v -> v instanceof PriorityVehicle pv && pv.isSirenActive())
@@ -251,29 +180,45 @@ public final class TrafficRuleEvaluator {
                 .anyMatch(pv -> {
                     double dist = pv.getPosition().distanceTo(self.getPosition());
                     if (dist > pv.getSirenRadius()) return false;
-                    // Chỉ nhường khi xe thường đang chắn đường xe ưu tiên
-                    return isBlockingPriorityVehicle(self, pv);
+
+                    Vector2D selfDir = movementDirection(self);
+                    Vector2D pvDir   = movementDirection(pv);
+                    if (selfDir.length() < 1e-9 || pvDir.length() < 1e-9) return true;
+
+                    Vector2D toPv   = pv.getPosition().subtract(self.getPosition()).normalize();
+                    Vector2D fromPv = self.getPosition().subtract(pv.getPosition()).normalize();
+
+                    // Case 1: PV is behind self on the same axis.
+                    // Threshold lowered 0.7 → 0.5 so a vehicle that just turned
+                    // (selfDir not yet fully stabilised) still yields to the ambulance
+                    // now pursuing it on the new heading.
+                    boolean sameAxis   = selfDir.dot(pvDir) > 0.5;
+                    boolean pvIsBehind = selfDir.dot(toPv) < 0;
+                    if (sameAxis && pvIsBehind) return true;
+
+                    // Case 2: PV is on a crossing axis and heading toward self.
+                    // Threshold raised 0.5 → 0.7 to close the dead-zone that
+                    // previously existed between the two checks (0.5–0.7).
+                    boolean crossAxis = Math.abs(selfDir.dot(pvDir)) < 0.7;
+                    if (crossAxis) {
+                        boolean pvIsHorizontal = Math.abs(pvDir.x) > Math.abs(pvDir.y);
+
+                        if (pvIsHorizontal) {
+                            // Case 2a: ambulance horizontal, vehicle vertical — check if ambulance is heading toward self
+                            boolean pvApproaching = pvDir.dot(fromPv) > 0.5;
+                            if (pvApproaching) return true;
+                        } else {
+                            // Case 2b: ambulance vertical, vehicle horizontal — check if ambulance path crosses in front of self
+                            Vector2D toSelf = self.getPosition().subtract(pv.getPosition());
+                            double pvForwardToSelf = pvDir.dot(toSelf);
+                            Vector2D lateral = toSelf.subtract(pvDir.multiply(pvForwardToSelf));
+                            boolean pvPathCrossesAhead = lateral.length() < pv.getWidth() * 2.0
+                                && selfDir.dot(pv.getPosition().subtract(self.getPosition())) > 0;
+                            if (pvPathCrossesAhead) return true;
+                        }
+                    }
+                    return false;
                 });
-    }
-
-    /**
-     * Kiểm tra xe {@code self} có đang chắn đường xe ưu tiên {@code pv} không.
-     * Điều kiện: {@code self} nằm phía trước {@code pv} theo hướng di chuyển
-     * của {@code pv}, và nằm trong phạm vi ngang của làn xe ưu tiên.
-     */
-    private boolean isBlockingPriorityVehicle(Vehicle self, PriorityVehicle pv) {
-        Vector2D pvDir = movementDirection(pv);
-        if (pvDir.length() < 1e-9) return false;
-
-        Vector2D toSelf = self.getEffectivePosition().subtract(pv.getEffectivePosition());
-        double forwardDist = pvDir.dot(toSelf);
-        // Xe thường phải ở phía trước xe ưu tiên
-        if (forwardDist <= 0) return false;
-
-        // Kiểm tra lệch ngang — không được vượt quá nửa chiều rộng làn của mỗi xe
-        Vector2D lateral = toSelf.subtract(pvDir.multiply(forwardDist));
-        double laneThreshold = (pv.getWidth() + self.getWidth()) / 2.0 + 6.0;
-        return lateral.length() <= laneThreshold;
     }
 
     /**
@@ -377,6 +322,17 @@ public final class TrafficRuleEvaluator {
             if (other.isCrashed())  continue;
             if (other.isFinished()) continue;
 
+
+            // priority vehicle in box → yield before entering, never stop inside ──
+            if (other instanceof core.vehicle.PriorityVehicle pv && pv.isSirenActive()) {
+                double theirDist = other.getEffectivePosition().distanceTo(nearest);
+                boolean theyInside = theirDist <= BOX_R;
+                if (theyInside && !iAmInside) {
+                    return ConflictLevel.STOP; // stop before box — never enter while ambulance is inside
+                }
+                continue; // if I'm already inside, don't freeze mid-box for the ambulance
+            }
+
             String theirEntry = other.getPath().getEntryArm();
             if (theirEntry.equals(myEntry)) continue; // cùng arm → cùng làn, không cắt nhau
 
@@ -433,6 +389,35 @@ public final class TrafficRuleEvaluator {
             }
         }
         return worst;
+    }
+
+    /**
+     * Gap to the nearest vehicle physically blocking the forward cone,
+     * regardless of travel direction. Used by emergency vehicles.
+     */
+    public double gapToObstacleAhead(Vehicle self, SimulationWorld world) {
+        Vector2D dir = movementDirection(self);
+        if (dir.length() < 1e-9) return -1.0;
+
+        Vector2D pos = self.getEffectivePosition();
+        double sweepHalfWidth = self.getWidth() / 2.0;
+
+        return world.getVehicles().stream()
+            .filter(v -> v != self && !v.isPriorityVehicle())
+            .filter(v -> {
+                Vector2D toOther = v.getEffectivePosition().subtract(pos);
+                double forward = dir.dot(toOther);
+                if (forward <= 0) return false;
+                Vector2D lateral = toOther.subtract(dir.multiply(forward));
+                return lateral.length() <= sweepHalfWidth + v.getWidth() / 2.0;
+            })
+            .min(Comparator.comparingDouble(
+                v -> dir.dot(v.getEffectivePosition().subtract(pos))))
+            .map(obstacle -> {
+                double centerDist = obstacle.getEffectivePosition().distanceTo(pos);
+                return centerDist - obstacle.getLength() / 2.0 - self.getLength() / 2.0;
+            })
+            .orElse(-1.0);
     }
 
     /** Wrapper backward-compat cho code cũ dùng boolean. */

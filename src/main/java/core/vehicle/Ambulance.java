@@ -45,7 +45,7 @@ public class Ambulance extends PriorityVehicle {
                 .roofColor(new Color(200, 0, 0))        // đỏ
                 //.spritePath("assets/sprites/ambulance.png")
                 .spriteKey(RenderAssetKey.AMBULANCE_EAST)
-                .defaultMaxSpeed(120)
+                .defaultMaxSpeed(100)
                 .defaultAcceleration(60)
                 .defaultLength(44)
                 .defaultWidth(20)

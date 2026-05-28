@@ -4,6 +4,7 @@ import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
+import util.Vector2D;
 
 /**
  * <b>Lái xe khẩn cấp</b> — dành riêng cho {@link core.vehicle.PriorityVehicle}.
@@ -20,72 +21,114 @@ import core.vehicle.Vehicle;
  */
 public class EmergencyDriver implements DriverBehavior {
 
-    private static final TrafficRuleEvaluator RULES         = new TrafficRuleEvaluator();
-    private static final double               SPEED_FACTOR  = 1.4;
+    private static final TrafficRuleEvaluator RULES        = new TrafficRuleEvaluator();
+    private static final double               SPEED_FACTOR = 1.4;
     /** Khoảng cách tối thiểu (px) trước khi bắt đầu giảm tốc nhẹ. */
-    private static final double               CRITICAL_GAP  = 20.0;
+    private static final double               CRITICAL_GAP = 20.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
+        // ── Siren off: behave like a normal vehicle ──────────────────────
         if (vehicle instanceof PriorityVehicle priorityVehicle
                 && !priorityVehicle.isSirenActive()) {
             if (RULES.mustStopAtRedLight(vehicle, world)) {
                 return DrivingDecision.stop();
             }
 
-            double gap = RULES.gapToFrontVehicle(vehicle, world);
-            double safeDistance = vehicle.getLength() * 1.5 + 15;
-            if (gap >= 0 && gap < safeDistance) {
-                double ratio = Math.max(0, gap / safeDistance);
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.6);
+            double gap = RULES.gapToObstacleAhead(vehicle, world);
+            if (gap >= 0) {
+                double speed = vehicle.getSpeed();
+                double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
+                double safeGap = vehicle.getLength() * 0.5 + brakingDistance + 10;
+
+                if (gap < safeGap) {
+                    double ratio = Math.max(0, gap / safeGap);
+                    double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.4;
+                    return DrivingDecision.brake(targetSpeed);
+                }
+
+                double safeDistance = vehicle.getLength() * 1.5 + 15;
+                if (gap < safeDistance) {
+                    double ratio = Math.max(0, gap / safeDistance);
+                    return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.6);
+                }
             }
 
             return DrivingDecision.accelerate(vehicle.getMaxSpeed());
         }
 
-        // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
-        double gap = RULES.gapToFrontVehicle(vehicle, world);
+        // ── Return to lane centre — identical logic to NormalDriver ──────
+        if (vehicle.getLateralOffset() != 0
+                && !RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
 
-        if (gap >= 0 && gap < CRITICAL_GAP) {
-            // Kiểm tra xe phía trước có chỗ sang bên không
-            boolean frontCanYield = canFrontVehicleYield(vehicle, world);
-            if (frontCanYield) {
-                // Chờ thêm một chút rồi tiếp tục — xe phía trước đang dạt
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
+            if (!isAmbulanceClear(vehicle, world)) {
+                return DrivingDecision.stop();
+            }
+
+            if (isMergePathClear(vehicle, world)) {
+                return DrivingDecision.mergeBack();
             } else {
-                // Không có chỗ → xe ưu tiên phải chậm lại, không đâm
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.15);
+                return DrivingDecision.yield();
+            }
+        }
+
+        // ── Check physical gap ahead (normal vehicles may not have moved yet) ──
+        double gap = RULES.gapToObstacleAhead(vehicle, world);
+
+        if (gap >= 0) {
+            double speed = vehicle.getSpeed();
+            double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
+            double safeGap = vehicle.getLength() * 0.5 + brakingDistance + 10;
+
+            if (gap < safeGap) {
+                double ratio = Math.max(0, gap / safeGap);
+                double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.4;
+                return DrivingDecision.brake(targetSpeed);
             }
         }
 
         return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * SPEED_FACTOR);
     }
 
-    /**
-     * Kiểm tra xe gần nhất phía trước xe ưu tiên có chỗ sang bên không.
-     * Nếu có ít nhất một bên trống, xe đó có thể nhường đường.
-     */
-    private boolean canFrontVehicleYield(Vehicle priorityVehicle, core.simulation.SimulationWorld world) {
-        util.Vector2D pos = priorityVehicle.getEffectivePosition();
+    private boolean isMergePathClear(Vehicle vehicle, SimulationWorld world) {
+        double myOffset     = vehicle.getLateralOffset();
+        double targetOffset = 0.0;
+
+        double mergeMin = Math.min(myOffset, targetOffset);
+        double mergeMax = Math.max(myOffset, targetOffset);
+
         return world.getVehicles().stream()
-                .filter(v -> v != priorityVehicle)
-                .filter(v -> !v.isCrashed() && !v.isFinished())
-                .filter(v -> isAheadOf(priorityVehicle, v))
-                .findFirst()
-                .map(front -> RULES.isSideClear(front, world, +1) || RULES.isSideClear(front, world, -1))
-                .orElse(true);
+            .filter(other -> other != vehicle && !other.isPriorityVehicle())
+            .noneMatch(other -> {
+                boolean samePath = other.getPath().getEntryArm()
+                    .equals(vehicle.getPath().getEntryArm());
+                if (!samePath) return false;
+
+                double otherOffset = other.getLateralOffset();
+                boolean blocksLateral = otherOffset >= mergeMin && otherOffset < mergeMax;
+                if (!blocksLateral) return false;
+
+                Vector2D toOther = other.getPosition().subtract(vehicle.getPosition());
+                Vector2D myDir = vehicle.getVelocity().length() > 1e-9
+                    ? vehicle.getVelocity().normalize()
+                    : vehicle.getPath().getWaypoints().get(vehicle.getWaypointIndex())
+                        .subtract(vehicle.getPosition()).normalize();
+                double forward = myDir.dot(toOther);
+                return forward > -vehicle.getLength() && Math.abs(forward) < vehicle.getLength() * 3.0;
+            });
     }
 
-    private boolean isAheadOf(Vehicle self, Vehicle other) {
-        util.Vector2D vel = self.getVelocity();
-        if (vel.length() < 1e-9) return false;
-        util.Vector2D dir = vel.normalize();
-        util.Vector2D toOther = other.getEffectivePosition().subtract(self.getEffectivePosition());
-        double fwd = dir.dot(toOther);
-        if (fwd <= 0 || fwd > 120) return false;
-        util.Vector2D lateral = toOther.subtract(dir.multiply(fwd));
-        return lateral.length() <= (self.getWidth() + other.getWidth());
+    private boolean isAmbulanceClear(Vehicle vehicle, SimulationWorld world) {
+        return world.getVehicles().stream()
+            .filter(v -> v instanceof PriorityVehicle pv && pv.isSirenActive())
+            .noneMatch(pv -> {
+                boolean sameArm = ((PriorityVehicle) pv).getPath().getEntryArm()
+                    .equals(vehicle.getPath().getEntryArm());
+                if (!sameArm) return false;
+                double dist = pv.getPosition().distanceTo(vehicle.getPosition());
+                return dist < ((PriorityVehicle) pv).getSirenRadius() * 1.5;
+            });
     }
 
     @Override

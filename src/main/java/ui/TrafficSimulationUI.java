@@ -97,6 +97,7 @@ public class TrafficSimulationUI extends Application {
     private Button    btnStartPause;
     private TextArea  logArea;
     private VBox      lightStatusBox;
+    private ComboBox<String> manualDirCombo;
 
     // ── Stats ──────────────────────────────────────────────────────
     private double          simTime      = 0;
@@ -227,7 +228,7 @@ public class TrafficSimulationUI extends Application {
     private void seedGrid() {
         spawnAt("car", makeGridPath(0), 0);
         spawnAt("bus", makeGridPath(1), 0);
-        spawnAt("car", makeGridPath(2), 0);
+        //spawnAt("car", makeGridPath(2), 0);
         spawnAt("truck", makeGridPath(3), 0);
         spawnAt("motorbike", makeGridPath(4), 0);
         spawnAt("ambulance", makeGridPath(5), 0);
@@ -337,6 +338,7 @@ public class TrafficSimulationUI extends Application {
                 currentMode = m;
                 for (javafx.scene.Node n : scRow1.getChildren()) styleToggle((ToggleButton)n, tg);
                 for (javafx.scene.Node n : scRow2.getChildren()) styleToggle((ToggleButton)n, tg);
+                rebuildDirCombo(manualDirCombo);
                 resetSimulation();
             });
             tb.selectedProperty().addListener((obs,ov,nv) -> tb.setStyle(toggleStyle(nv)));
@@ -454,8 +456,8 @@ public class TrafficSimulationUI extends Application {
         styleCombo(cbType);
 
         // Direction options depend on mode — rebuilt on reset
-        ComboBox<String> cbDir = new ComboBox<>();
-        rebuildDirCombo(cbDir);
+        manualDirCombo = new ComboBox<>();
+        rebuildDirCombo(manualDirCombo);
 
         ComboBox<String> cbDriver = new ComboBox<>();
         cbDriver.getItems().addAll("👍 Normal","😤 Aggressive","🚨 Emergency");
@@ -467,7 +469,7 @@ public class TrafficSimulationUI extends Application {
         btnAdd.setMaxWidth(Double.MAX_VALUE);
         btnAdd.setOnAction(e -> {
             String typeKey = typeKeys[cbType.getSelectionModel().getSelectedIndex()];
-            int dirIdx     = cbDir.getSelectionModel().getSelectedIndex();
+            int dirIdx     = manualDirCombo.getSelectionModel().getSelectedIndex();
             var path       = getPathByModeAndDir(dirIdx);
             var drv = switch (cbDriver.getSelectionModel().getSelectedIndex()) {
                 case 1 -> new AggressiveDriver();
@@ -479,7 +481,7 @@ public class TrafficSimulationUI extends Application {
 
         panel.getChildren().addAll(
             smallLbl("Loại xe:"), cbType,
-            smallLbl("Hướng đi:"), cbDir,
+            smallLbl("Hướng đi:"), manualDirCombo,
             smallLbl("Kiểu lái:"), cbDriver,
             btnAdd
         );
@@ -530,27 +532,34 @@ public class TrafficSimulationUI extends Application {
     }
 
     private void rebuildDirCombo(ComboBox<String> cb) {
+        if (cb == null) return;
         cb.getItems().clear();
         switch (currentMode) {
             case FOUR_WAY -> cb.getItems().addAll(
-                "⬇ Bắc→Nam","↱ Bắc→Đông","↰ Bắc→Tây",
-                "⬆ Nam→Bắc","↱ Nam→Đông","↰ Nam→Tây",
-                "⬅ Đông→Tây","↱ Đông→Bắc","↰ Đông→Nam",
-                "➡ Tây→Đông","↱ Tây→Nam","↰ Tây→Bắc");
-            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam","↰ Bắc→Tây","↲ Nam→Tây");
+                "⬇ Bắc→Nam", "↱ Bắc→Đông", "↰ Bắc→Tây",
+                "⬆ Nam→Bắc", "↰ Nam→Đông", "↱ Nam→Tây",
+                "⬅ Đông→Tây", "↱ Đông→Bắc", "↰ Đông→Nam",
+                "➡ Tây→Đông", "↱ Tây→Nam", "↰ Tây→Bắc");
+            case THREE_WAY -> cb.getItems().addAll(
+                "⬇ Bắc→Nam", "⬆ Nam→Bắc",
+                "↱ Tây→Bắc", "↳ Tây→Nam",
+                "↰ Bắc→Tây", "↲ Nam→Tây");
             case FIVE_WAY -> cb.getItems().addAll(
-                "⬇ Bắc→Nam","↱ Bắc→Đông","↗ Bắc→Đông-Bắc",
-                "⬆ Nam→Bắc","↰ Nam→Tây",
-                "⬅ Đông→Tây","↱ Đông→Bắc",
-                "➡ Tây→Đông","↳ Tây→Nam",
-                "↙ Đông-Bắc→Tây","↙ Đông-Bắc→Nam","↙ Đông-Bắc→Bắc");
+                "⬇ Bắc→Nam", "↱ Bắc→Đông", "↗ Bắc→Đông-Bắc",
+                "⬆ Nam→Bắc", "↱ Nam→Tây",
+                "⬅ Đông→Tây", "↱ Đông→Bắc",
+                "➡ Tây→Đông", "↱ Tây→Nam",
+                "↙ Đông-Bắc→Tây", "↙ Đông-Bắc→Nam", "↙ Đông-Bắc→Bắc");
             case GRID -> cb.getItems().addAll(
-                "⬇ Cột trái","⬆ Cột giữa","⬇ Cột phải",
-                "➡ Hàng trên","⬅ Hàng giữa","➡ Hàng dưới",
-                "↱ Trái→Xuống","↰ Trái→Lên","↳ Trên→Phải",
-                "↲ Trên→Trái","↱ Phải→Lên","↳ Phải→Xuống");
+                "⬇ Cột trái: Bắc→Nam", "⬆ Cột giữa: Nam→Bắc", "⬇ Cột phải: Bắc→Nam",
+                "➡ Hàng trên: Tây→Đông", "⬅ Hàng giữa: Đông→Tây", "➡ Hàng dưới: Tây→Đông",
+                "↱ Tây hàng trên→Nam cột trái", "↰ Tây hàng giữa→Bắc cột trái",
+                "↳ Bắc cột giữa→Đông hàng trên", "↲ Bắc cột phải→Tây hàng trên",
+                "↱ Đông hàng giữa→Bắc cột phải", "↳ Đông hàng trên→Nam cột phải");
         }
-        cb.setValue(cb.getItems().get(0));
+        if (!cb.getItems().isEmpty()) {
+            cb.getSelectionModel().select(0);
+        }
     }
 
     private HBox buildStatusBar() {

@@ -29,7 +29,6 @@ ui\TrafficSimulationUI$LightClickTarget.class
 core\model\Movable.class
 util\MathUtils.class
 graphics\renderer\RenderMode.class
-sound\SoundPlayer.class
 core\model\RenderableState.class
 core\rule\OvertakingPolicy.class
 graphics\sprite\SpriteLoader.class
@@ -70,5 +69,4 @@ core\trafficlight\TrafficLight.class
 core\driver\DriverBehavior.class
 core\simulation\SimulationWorld.class
 ui\TrafficSimulationUI$2.class
-sound\SoundLibrary.class
 core\vehicle\VehicleFactory.class
