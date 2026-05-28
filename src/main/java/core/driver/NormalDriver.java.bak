@@ -45,11 +45,10 @@ public class NormalDriver implements DriverBehavior {
 
                 if (myLaneType.equals(theirLaneType) || isBlockingEmergencyPath) {
                     // Cùng làn hoặc chắn trực tiếp:
-                    // Dạt sang PHẢI (lề đường) — lateralOffset dương = phải màn hình = lề
-                    // Nếu chưa dạt đủ → tiếp tục dạt sang phải
+                    // Nếu chưa dạt đủ → tiếp tục dạt (tốc độ chậm vừa)
                     // Nếu đã dạt đủ  → chạy bình thường, không kìm tốc độ nữa
-                    if (vehicle.getLateralOffset() < YIELD_OFFSET_TARGET) {
-                        return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * 0.5);
+                    if (vehicle.getLateralOffset() > -YIELD_OFFSET_TARGET) {
+                        return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.5);
                     }
                     // Đã dạt đủ — tiếp tục đi bình thường (fall-through xuống bước 2-4)
                 } else {

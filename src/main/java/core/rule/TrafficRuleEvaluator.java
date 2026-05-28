@@ -121,6 +121,8 @@ public final class TrafficRuleEvaluator {
 
         return world.getVehicles().stream()
                 .filter(v -> v != self)
+                // Bỏ qua xe đã dạt sang lề hoàn toàn để nhường đường
+                .filter(v -> !v.isYielding() || Math.abs(v.getLateralOffset()) < 10.0)
                 .filter(v -> isAheadInSameLane(self, v))
                 .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
                 .map(front -> {
@@ -128,6 +130,50 @@ public final class TrafficRuleEvaluator {
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
+    }
+
+    /**
+     * Giống {@link #gapToFrontVehicle} nhưng dùng {@code position} thô (không bị lệch bởi
+     * lateralOffset). Dùng cho xe ưu tiên để không bị ảnh hưởng bởi xe đã dạt sang bên.
+     */
+    public double gapToFrontVehicleOnPath(Vehicle self, SimulationWorld world) {
+        Vector2D pos = self.getPosition();
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> isAheadInSameLane(self, v))
+                // chỉ tính xe còn đang chặn đường thực sự (lateralOffset < nửa làn)
+                .filter(v -> Math.abs(v.getLateralOffset()) < 11.0)
+                .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
+                .map(front -> {
+                    double centerDist = front.getPosition().distanceTo(pos);
+                    return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
+                })
+                .orElse(-1.0);
+    }
+
+    /**
+     * {@code candidate} có đang ở phía trước {@code reference} trong cùng làn không?
+     * Dùng để xác định xe thường đang chắn đường xe ưu tiên.
+     * Chỉ trả về true khi khoảng ngang thực sự nằm trong cùng một làn
+     * (nhỏ hơn nửa chiều rộng xe reference — tránh nhầm làn kế bên).
+     */
+    public boolean isAheadOf(Vehicle candidate, Vehicle reference, SimulationWorld world) {
+        Vector2D dir = movementDirection(reference);
+        if (dir.length() < 1e-9) return false;
+
+        Vector2D toCandidate = candidate.getEffectivePosition()
+                                        .subtract(reference.getEffectivePosition());
+        double forwardDistance = dir.dot(toCandidate);
+        if (forwardDistance <= 0) return false;
+
+        Vector2D candidateDir = movementDirection(candidate);
+        if (candidateDir.length() >= 1e-9 && dir.dot(candidateDir) < 0.5) return false;
+
+        // Khoảng ngang phải nhỏ hơn nửa chiều rộng làn (dùng chiều rộng xe reference làm proxy)
+        Vector2D lateral = toCandidate.subtract(dir.multiply(forwardDistance));
+        double strictLaneThreshold = reference.getWidth() / 2.0 + 2.0;
+        return lateral.length() <= strictLaneThreshold;
     }
 
     /**
@@ -168,18 +214,40 @@ public final class TrafficRuleEvaluator {
 
     /**
      * Xe hiện tại có phải nhường đường cho xe ưu tiên nào đó không?
-     * Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
-     * và đang tiến gần xe hiện tại.
+     *
+     * <p>Điều kiện để phải nhường:</p>
+     * <ol>
+     *   <li>Xe ưu tiên đang bật siren và trong bán kính sirên.</li>
+     *   <li>Xe hiện tại KHÔNG đi ngược chiều hoàn toàn (N↔S, E↔W) với xe ưu tiên
+     *       — xe ngược chiều dùng làn riêng, không liên quan.</li>
+     *   <li>Xe ưu tiên đang tiến về phía xe hiện tại (dot product dương),
+     *       hoặc xe hiện tại nằm trực tiếp trên đường đi của xe ưu tiên.</li>
+     * </ol>
      */
     public boolean shouldYieldToPriorityVehicle(Vehicle self, SimulationWorld world) {
-        if (self.isPriorityVehicle()) return false;   // xe ưu tiên không nhường nhau
+        if (self.isPriorityVehicle()) return false;
 
         return world.getVehicles().stream()
                 .filter(v -> v instanceof PriorityVehicle pv && pv.isSirenActive())
                 .map(v -> (PriorityVehicle) v)
                 .anyMatch(pv -> {
                     double dist = pv.getPosition().distanceTo(self.getPosition());
-                    return dist <= pv.getSirenRadius();
+                    if (dist > pv.getSirenRadius()) return false;
+
+                    // Xe đi ngược chiều hoàn toàn → dùng làn riêng, không cần nhường
+                    String pvEntry   = pv.getPath().getEntryArm();
+                    String selfEntry = self.getPath().getEntryArm();
+                    if (isOpposite(pvEntry, selfEntry)) return false;
+
+                    // Xe ưu tiên có đang tiến về phía xe này không?
+                    Vector2D pvDir   = movementDirection(pv);
+                    Vector2D toSelf  = self.getPosition().subtract(pv.getPosition());
+                    if (toSelf.length() < 1e-9) return true; // trùng vị trí → nhường
+                    double dot = pvDir.dot(toSelf.normalize());
+
+                    // dot > -0.3: xe ưu tiên đang đi về phía trước hoặc ngang —
+                    // chỉ bỏ qua khi xe ưu tiên đang đi RA XA rõ ràng (dot < -0.3)
+                    return dot > -0.3;
                 });
     }
 

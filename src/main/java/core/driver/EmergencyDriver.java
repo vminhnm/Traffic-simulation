@@ -10,46 +10,59 @@ import core.vehicle.Vehicle;
  *
  * <h2>Đặc điểm</h2>
  * <ul>
- *   <li><b>Bỏ qua hoàn toàn đèn đỏ / vàng</b> — xe ưu tiên có quyền đi.</li>
- *   <li>Tốc độ = {@code maxSpeed × 1.4}.</li>
- *   <li>Khi có xe đang chắn thẳng đường ({@code gap < CRITICAL_GAP}),
- *       giảm tốc nhẹ thay vì phanh gấp — tránh đâm nhưng không dừng.</li>
- *   <li>Tín hiệu EMERGENCY_PASS thông báo cho SimulationEngine biết
- *       cần kích hoạt logic "xe thường tránh đường" cho vùng lân cận.</li>
+ *   <li>Bỏ qua đèn đỏ / vàng.</li>
+ *   <li>Warm-up 1.5 giây đầu: chạy chậm để xe trước kịp dạt ra.</li>
+ *   <li>Dùng {@code gapToFrontVehicleOnPath} — bỏ qua xe đã dạt ra ngoài (offset ≥ 9px)
+ *       để không bị kìm tốc độ bởi xe đã nhường đường.</li>
+ *   <li>Phanh sớm dựa trên quãng đường phanh thực tế (v²/2a).</li>
  * </ul>
  */
 public class EmergencyDriver implements DriverBehavior {
 
-    private static final TrafficRuleEvaluator RULES         = new TrafficRuleEvaluator();
-    private static final double               SPEED_FACTOR  = 1.4;
-    /** Khoảng cách tối thiểu (px) trước khi bắt đầu giảm tốc nhẹ. */
-    private static final double               CRITICAL_GAP  = 20.0;
+    private static final TrafficRuleEvaluator RULES        = new TrafficRuleEvaluator();
+    private static final double               SPEED_FACTOR = 1.4;
+    private static final double               WARMUP_DURATION = 1.5; // giây
+
+    private double aliveTime = 0.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        if (vehicle instanceof PriorityVehicle priorityVehicle
-                && !priorityVehicle.isSirenActive()) {
-            if (RULES.mustStopAtRedLight(vehicle, world)) {
-                return DrivingDecision.stop();
-            }
-
+        // ── Siren tắt: hành xử như xe thường ────────────────────────
+        if (vehicle instanceof PriorityVehicle pv && !pv.isSirenActive()) {
+            if (RULES.mustStopAtRedLight(vehicle, world)) return DrivingDecision.stop();
             double gap = RULES.gapToFrontVehicle(vehicle, world);
             double safeDistance = vehicle.getLength() * 1.5 + 15;
             if (gap >= 0 && gap < safeDistance) {
                 double ratio = Math.max(0, gap / safeDistance);
                 return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.6);
             }
-
             return DrivingDecision.accelerate(vehicle.getMaxSpeed());
         }
 
-        // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
-        double gap = RULES.gapToFrontVehicle(vehicle, world);
+        aliveTime += 0.016;
 
-        if (gap >= 0 && gap < CRITICAL_GAP) {
-            // Giảm tốc vừa phải để chờ xe thường nhường đường
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
+        // Chỉ tính xe còn đứng chắn đường thực sự (đã dạt thì bỏ qua)
+        double gap   = RULES.gapToFrontVehicleOnPath(vehicle, world);
+        double speed = vehicle.getSpeed();
+        double accel = vehicle.getAcceleration();
+
+        if (gap >= 0) {
+            double brakingDist  = (speed * speed) / (accel * 2.0);
+            double safeDistance = vehicle.getLength() * 1.5 + brakingDist + 10;
+
+            if (gap < vehicle.getLength() * 0.6) {
+                return DrivingDecision.stop();
+            }
+            if (gap < safeDistance) {
+                double ratio = Math.max(0.0, gap / safeDistance);
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.7);
+            }
+        }
+
+        // Warm-up: chạy chậm để xe trước kịp dạt
+        if (aliveTime < WARMUP_DURATION) {
+            return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * 0.4);
         }
 
         return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * SPEED_FACTOR);
