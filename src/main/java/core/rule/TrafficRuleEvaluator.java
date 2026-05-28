@@ -357,7 +357,7 @@ public final class TrafficRuleEvaluator {
         if (nearest == null) return ConflictLevel.NONE;
 
         double myDist = myPos.distanceTo(nearest);
-        if (myDist > APPROACH_R) return ConflictLevel.NONE;
+        if (myDist > 115.0) return ConflictLevel.NONE;
 
         // Xe đã vượt qua hộp giao lộ và đang ra ngoài (exiting) → không còn trong vùng conflict
         // isInIntersection=true nhưng myDist > BOX_R nghĩa là xe đã đi qua tâm, đang thoát ra
@@ -403,6 +403,9 @@ public final class TrafficRuleEvaluator {
             // Hai xe đi thẳng ngược chiều (N↔S hoặc E↔W) — dùng làn riêng, không đâm nhau
             if (isOpposite(myEntry, theirEntry) && iAmStraight && theyStraight) continue;
 
+            PathConflict pathConflict = predictPathConflict(self, other, nearest, 105.0);
+            if (pathConflict == null) continue;
+
             // ── Xe kia đang trong hộp giao lộ ──────────────────────────────────────
             if (theyInside) {
                 if (iAmInside) {
@@ -410,6 +413,9 @@ public final class TrafficRuleEvaluator {
                     // Xe rẽ nhường xe thẳng; nếu cả hai đều rẽ → xe nào vào trước tiếp tục (YIELD)
                     if (!iAmStraight && theyStraight) {
                         // Tôi rẽ, họ thẳng → tôi phải STOP để tránh đâm
+                        return ConflictLevel.STOP;
+                    }
+                    if (pathConflict.selfDistance > pathConflict.otherDistance + 8.0) {
                         return ConflictLevel.STOP;
                     }
                     // Tôi thẳng, họ rẽ → tôi có quyền ưu tiên → chỉ YIELD nhẹ đề phòng
@@ -426,7 +432,10 @@ public final class TrafficRuleEvaluator {
                     continue;
                 } else {
                     // Cả hai đang tiếp cận — chỉ xe ĐANG RẼ mới nhường, xe thẳng có ưu tiên
-                    if (!iAmStraight) {
+                    if (shouldYieldBeforeIntersection(self, other, pathConflict, iAmStraight, theyStraight)) {
+                        worst = ConflictLevel.STOP;
+                    }
+                    /*
                         // Tôi đang rẽ → nhường nếu xe kia (đi thẳng) gần hộp hơn hoặc xấp xỉ
                         if (theyStraight && theirDist <= myDist + 20) {
                             worst = ConflictLevel.STOP;
@@ -435,7 +444,7 @@ public final class TrafficRuleEvaluator {
                         if (!theyStraight && Math.abs(theirDist - myDist) < 10) {
                             if (worst == ConflictLevel.NONE) worst = ConflictLevel.YIELD;
                         }
-                    }
+                    */
                     // Tôi đi thẳng → không nhường ai khi cả hai đang tiếp cận
                 }
             }
@@ -447,6 +456,111 @@ public final class TrafficRuleEvaluator {
      * Gap to the nearest vehicle physically blocking the forward cone,
      * regardless of travel direction. Used by emergency vehicles.
      */
+    private boolean shouldYieldBeforeIntersection(
+            Vehicle self, Vehicle other, PathConflict conflict,
+            boolean selfStraight, boolean otherStraight) {
+        if (!selfStraight && otherStraight) return true;
+        if (selfStraight && !otherStraight) return false;
+
+        double distanceMargin = Math.max(10.0, self.getLength() * 0.35);
+        if (conflict.selfDistance > conflict.otherDistance + distanceMargin) return true;
+        if (conflict.otherDistance > conflict.selfDistance + distanceMargin) return false;
+
+        int myPriority = entryPriority(self.getPath().getEntryArm());
+        int otherPriority = entryPriority(other.getPath().getEntryArm());
+        if (myPriority != otherPriority) return myPriority > otherPriority;
+
+        return self.getId().compareTo(other.getId()) > 0;
+    }
+
+    private int entryPriority(String entry) {
+        if (entry == null || entry.isBlank()) return 99;
+        return switch (entry.charAt(0)) {
+            case 'N' -> 0;
+            case 'E' -> 1;
+            case 'S' -> 2;
+            case 'W' -> 3;
+            default -> 4;
+        };
+    }
+
+    private PathConflict predictPathConflict(Vehicle self, Vehicle other, Vector2D center, double radius) {
+        java.util.List<PathSample> mine = sampleRemainingPath(self, center, radius);
+        java.util.List<PathSample> theirs = sampleRemainingPath(other, center, radius);
+        if (mine.isEmpty() || theirs.isEmpty()) return null;
+
+        double threshold = (self.getWidth() + other.getWidth()) / 2.0 + 10.0;
+        PathConflict best = null;
+        double bestDistance = Double.POSITIVE_INFINITY;
+
+        for (PathSample a : mine) {
+            for (PathSample b : theirs) {
+                double distance = a.point.distanceTo(b.point);
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    best = new PathConflict(a.distanceAlong, b.distanceAlong);
+                }
+            }
+        }
+
+        return bestDistance <= threshold ? best : null;
+    }
+
+    private java.util.List<PathSample> sampleRemainingPath(Vehicle vehicle, Vector2D center, double radius) {
+        java.util.List<PathSample> samples = new java.util.ArrayList<>();
+        java.util.List<Vector2D> waypoints = vehicle.getPath().getWaypoints();
+        if (vehicle.getWaypointIndex() >= waypoints.size()) return samples;
+
+        Vector2D from = vehicle.getEffectivePosition();
+        double distanceAlong = 0.0;
+        addSampleIfNear(samples, from, distanceAlong, center, radius);
+
+        for (int i = vehicle.getWaypointIndex(); i < waypoints.size(); i++) {
+            Vector2D to = waypoints.get(i);
+            double segmentLength = from.distanceTo(to);
+            if (segmentLength > 1e-9) {
+                for (double d = 8.0; d < segmentLength; d += 8.0) {
+                    double t = d / segmentLength;
+                    Vector2D point = from.add(to.subtract(from).multiply(t));
+                    addSampleIfNear(samples, point, distanceAlong + d, center, radius);
+                }
+                distanceAlong += segmentLength;
+                addSampleIfNear(samples, to, distanceAlong, center, radius);
+            }
+            if (distanceAlong > radius * 3.0 && to.distanceTo(center) > radius) break;
+            from = to;
+        }
+        return samples;
+    }
+
+    private void addSampleIfNear(
+            java.util.List<PathSample> samples, Vector2D point, double distanceAlong,
+            Vector2D center, double radius) {
+        if (point.distanceTo(center) <= radius) {
+            samples.add(new PathSample(point, distanceAlong));
+        }
+    }
+
+    private static final class PathSample {
+        private final Vector2D point;
+        private final double distanceAlong;
+
+        private PathSample(Vector2D point, double distanceAlong) {
+            this.point = point;
+            this.distanceAlong = distanceAlong;
+        }
+    }
+
+    private static final class PathConflict {
+        private final double selfDistance;
+        private final double otherDistance;
+
+        private PathConflict(double selfDistance, double otherDistance) {
+            this.selfDistance = selfDistance;
+            this.otherDistance = otherDistance;
+        }
+    }
+
     public double gapToObstacleAhead(Vehicle self, SimulationWorld world) {
         Vector2D dir = movementDirection(self);
         if (dir.length() < 1e-9) return -1.0;

@@ -42,6 +42,29 @@ public class TrafficRuleEvaluatorTest {
                 new Vector2D(startX - 140, y - 40)), 1, null, "E", exitArm);
     }
 
+    private VehiclePath northToEastTurn(String id) {
+        return new VehiclePath(id, List.of(
+                new Vector2D(111, 30),
+                new Vector2D(111, 40),
+                new Vector2D(111, 89),
+                new Vector2D(170, 89)), 1, null, "N", "E");
+    }
+
+    private VehiclePath westToSouthTurn(String id) {
+        return new VehiclePath(id, List.of(
+                new Vector2D(30, 89),
+                new Vector2D(40, 89),
+                new Vector2D(111, 89),
+                new Vector2D(111, 170)), 1, null, "W", "S");
+    }
+
+    private VehiclePath westToEastStraight(String id) {
+        return new VehiclePath(id, List.of(
+                new Vector2D(30, 89),
+                new Vector2D(40, 89),
+                new Vector2D(170, 89)), 1, null, "W", "E");
+    }
+
     @Test
     void testVehiclesAreColliding() {
         TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
@@ -144,5 +167,37 @@ public class TrafficRuleEvaluatorTest {
         double gap = evaluator.gapToFrontVehicle(eastWest, world);
 
         assertEquals(-1.0, gap, 1e-9, "Opposite traffic in the neighboring lane must not be treated as a front vehicle.");
+    }
+
+    @Test
+    void crossingTurningVehiclesPickOneVehicleToStopBeforeIntersection() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        world.addIntersectionCenter(new Vector2D(100, 100));
+        Car northTurn = new Car("north-turn", northToEastTurn("north-turn"), new NormalDriver());
+        Car westTurn = new Car("west-turn", westToSouthTurn("west-turn"), new NormalDriver());
+        world.addVehicle(northTurn);
+        world.addVehicle(westTurn);
+
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.NONE,
+                evaluator.getIntersectionConflictLevel(northTurn, world));
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.STOP,
+                evaluator.getIntersectionConflictLevel(westTurn, world));
+    }
+
+    @Test
+    void turningVehicleYieldsToStraightVehicleOnConflictingPath() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        world.addIntersectionCenter(new Vector2D(100, 100));
+        Car turn = new Car("turn", northToEastTurn("turn"), new NormalDriver());
+        Car straight = new Car("straight", westToEastStraight("straight"), new NormalDriver());
+        world.addVehicle(turn);
+        world.addVehicle(straight);
+
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.STOP,
+                evaluator.getIntersectionConflictLevel(turn, world));
+        assertEquals(TrafficRuleEvaluator.ConflictLevel.NONE,
+                evaluator.getIntersectionConflictLevel(straight, world));
     }
 }

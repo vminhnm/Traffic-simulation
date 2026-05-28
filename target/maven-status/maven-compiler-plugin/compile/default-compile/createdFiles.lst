@@ -23,6 +23,7 @@ core\vehicle\Motorbike.class
 core\vehicle\FireTruck.class
 sound\SoundType.class
 core\intersection\Intersection.class
+core\rule\TrafficRuleEvaluator$PathSample.class
 core\controller\LightControlStrategy.class
 core\driver\AggressiveDriver.class
 ui\TrafficSimulationUI$LightClickTarget.class
@@ -62,6 +63,7 @@ core\intersection\IntersectionType.class
 core\road\Road.class
 core\vehicle\Car.class
 util\IdGenerator.class
+core\rule\TrafficRuleEvaluator$PathConflict.class
 core\driver\NormalDriver.class
 sound\SoundManager.class
 ui\TrafficSimulationUI$CountdownMode.class
