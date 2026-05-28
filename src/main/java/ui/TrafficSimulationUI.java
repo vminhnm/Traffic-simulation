@@ -34,6 +34,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.Button;
 import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
+import javafx.scene.control.ListCell;
 import javafx.scene.control.ScrollPane;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
@@ -1034,8 +1035,22 @@ public class TrafficSimulationUI extends Application {
         // Đèn hậu đỏ (phía sau xe)
         if (s.isStopped() && !s.isYielding()) {
             g.setFill(Color.web("#ef4444", 0.8));
-            g.fillRect(-oL/2 - 2, -oW/2, 4, 4);
-            g.fillRect(-oL/2 - 2,  oW/2 - 4, 4, 4);
+            if (renderMode == RenderMode.BASIC) {
+                // BASIC mode: canvas is rotated, rear = negative X direction
+                g.fillRect(-oL/2 - 2, -oW/2, 4, 4);
+                g.fillRect(-oL/2 - 2,  oW/2 - 4, 4, 4);
+            } else {
+                // GRAPHICS mode: canvas NOT rotated, sprite already faces correct dir
+                // Compute rear offset from rotation angle
+                double rot = s.getRotation();
+                double rearX = -Math.cos(rot) * (oL / 2 + 2);
+                double rearY = -Math.sin(rot) * (oL / 2 + 2);
+                // Perpendicular direction for left/right lights
+                double perpX = Math.sin(rot) * (oW / 2 - 2);
+                double perpY = -Math.cos(rot) * (oW / 2 - 2);
+                g.fillRect(rearX + perpX - 2, rearY + perpY - 2, 4, 4);
+                g.fillRect(rearX - perpX - 2, rearY - perpY - 2, 4, 4);
+            }
         }
 
         // Đèn nháy xe ưu tiên
@@ -1562,7 +1577,22 @@ public class TrafficSimulationUI extends Application {
         b.setOnMouseEntered(e->b.setOpacity(0.82)); b.setOnMouseExited(e->b.setOpacity(1.0));}
     private void styleCombo(ComboBox<String> cb) {
         cb.setMaxWidth(Double.MAX_VALUE);
-        cb.setStyle("-fx-background-color:#1e3a5f;-fx-text-fill:#e2e8f0;-fx-font-size:12;-fx-background-radius:4;");}
+        cb.setStyle("-fx-background-color:#1e3a5f;-fx-text-fill:white;-fx-font-size:12;-fx-background-radius:4;");
+        cb.setCellFactory(lv -> new ListCell<>() {
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : item);
+                setStyle("-fx-text-fill:white;-fx-background-color:#1e3a5f;-fx-font-size:12;");
+            }
+        });
+        cb.setButtonCell(new ListCell<>() {
+            @Override protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                setText(empty ? null : item);
+                setStyle("-fx-text-fill:white;-fx-background-color:transparent;-fx-font-size:12;");
+            }
+        });
+    }
     private void styleSlider(Slider s) {
         s.setShowTickMarks(true); s.setMajorTickUnit(1); s.setStyle("-fx-control-inner-background:#1e3a5f;");}
     private String toggleStyle(boolean sel) {

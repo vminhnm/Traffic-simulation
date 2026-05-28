@@ -2,6 +2,7 @@ core\road\Route.class
 core\simulation\CollisionManager.class
 core\vehicle\Vehicle$1.class
 core\simulation\CollisionEvent$Type.class
+ui\TrafficSimulationUI$4.class
 util\Direction.class
 core\driver\DrivingAction.class
 core\vehicle\Bicycle.class
@@ -47,6 +48,7 @@ graphics\sprite\RenderAssetKey.class
 core\vehicle\RenderableState$Builder.class
 core\simulation\SimulationEngine.class
 app\MainApp.class
+ui\TrafficSimulationUI$3.class
 core\vehicle\Bus.class
 core\rule\SafeDistancePolicy.class
 app\SimulationApplication.class
