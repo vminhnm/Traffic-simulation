@@ -111,23 +111,58 @@ public final class TrafficRuleEvaluator {
 
     /**
      * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước
-     * trên cùng làn/hướng đi. Xe có thể khác route khi chuẩn bị rẽ, nên
-     * không chỉ so path id.
+     * trên cùng làn/hướng đi.
      *
      * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
      */
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
         Vector2D pos  = self.getEffectivePosition();
 
-        return world.getVehicles().stream()
-                .filter(v -> v != self)
-                .filter(v -> isAheadInSameLane(self, v))
-                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
+        return nearestFrontVehicle(self, world)
                 .map(front -> {
                     double centerDist = front.getEffectivePosition().distanceTo(pos);
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
+    }
+
+    /**
+     * Tìm xe gần nhất phía trước trên cùng làn.
+     */
+    public Optional<Vehicle> nearestFrontVehicle(Vehicle self, SimulationWorld world) {
+        Vector2D pos = self.getEffectivePosition();
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> !v.isCrashed() && !v.isFinished())
+                .filter(v -> isAheadInSameLane(self, v))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)));
+    }
+
+    /**
+     * Kiểm tra xem xe có thể dịch chuyển sang lateral offset mục tiêu không
+     * (không bị xe khác chặn trong vùng front+rear).
+     */
+    public boolean canShiftToOffset(Vehicle self, SimulationWorld world, double targetOffset) {
+        Vector2D dir = movementDirection(self);
+        if (dir.length() < 1e-9) return false;
+
+        Vector2D targetPos = effectivePositionAtOffset(self, targetOffset);
+        double frontClear = Math.max(self.getLength() * 4.0, 120.0);
+        double rearClear  = Math.max(self.getLength() * 1.5, 45.0);
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> !v.isCrashed() && !v.isFinished())
+                .noneMatch(other -> {
+                    Vector2D toOther = other.getEffectivePosition().subtract(targetPos);
+                    double forward = dir.dot(toOther);
+                    if (forward < -rearClear || forward > frontClear) return false;
+
+                    Vector2D lateral = toOther.subtract(dir.multiply(forward));
+                    double lateralClearance = (self.getWidth() + other.getWidth()) / 2.0 + 2.0;
+                    return lateral.length() <= lateralClearance;
+                });
     }
 
     /**
@@ -162,14 +197,53 @@ public final class TrafficRuleEvaluator {
         return Vector2D.ZERO;
     }
 
+    /**
+     * Tính vị trí effectivePosition của xe nếu nó dịch sang lateral offset cho trước.
+     */
+    public Vector2D effectivePositionAtOffset(Vehicle vehicle, double lateralOffset) {
+        Vector2D dir = movementDirection(vehicle);
+        if (dir.length() < 1e-9) return vehicle.getEffectivePosition();
+
+        Vector2D rightVector = new Vector2D(-dir.y, dir.x);
+        return vehicle.getPosition().add(rightVector.multiply(lateralOffset));
+    }
+
+    /**
+     * Khoảng cách ngang từ điểm {@code point} đến đường di chuyển của xe {@code reference}.
+     */
+    public double lateralDistanceFromMovementLine(Vehicle reference, Vector2D point) {
+        Vector2D dir = movementDirection(reference);
+        if (dir.length() < 1e-9) return Double.POSITIVE_INFINITY;
+
+        Vector2D toPoint = point.subtract(reference.getEffectivePosition());
+        double forward = dir.dot(toPoint);
+        return toPoint.subtract(dir.multiply(forward)).length();
+    }
+
+    /**
+     * Kiểm tra xem xe {@code self} có nằm trong hành lang di chuyển của xe ưu tiên không.
+     * Dùng để quyết định có cần dạt ra khi xe ưu tiên ở cùng trục không.
+     */
+    public boolean isInPriorityCorridor(Vehicle self, PriorityVehicle priorityVehicle) {
+        double lateralDistance = lateralDistanceFromMovementLine(
+                priorityVehicle, self.getEffectivePosition());
+        double blockingThreshold = (self.getWidth() + priorityVehicle.getWidth()) / 2.0 + 2.0;
+        return lateralDistance <= blockingThreshold;
+    }
+
     // ─────────────────────────────────────────────────────────────────
-    //  Xe ưu tiên
+    //  Xe ưu tiên — LOGIC NHƯỜNG ĐƯỜNG (từ main2)
     // ─────────────────────────────────────────────────────────────────
 
     /**
      * Xe hiện tại có phải nhường đường cho xe ưu tiên nào đó không?
-     * Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
-     * và đang tiến gần xe hiện tại.
+     *
+     * <p>Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
+     * và đang tiến gần xe hiện tại.</p>
+     *
+     * <p><b>Cải tiến so với phiên bản cũ:</b> Case 1 (cùng trục) chỉ nhường
+     * khi xe thực sự nằm trong hành lang ({@link #isInPriorityCorridor}) của
+     * xe ưu tiên, tránh dừng không cần thiết khi đã dạt ra ngoài hành lang.</p>
      */
     public boolean shouldYieldToPriorityVehicle(Vehicle self, SimulationWorld world) {
         if (self.isPriorityVehicle()) return false;
@@ -192,9 +266,11 @@ public final class TrafficRuleEvaluator {
                     // Threshold lowered 0.7 → 0.5 so a vehicle that just turned
                     // (selfDir not yet fully stabilised) still yields to the ambulance
                     // now pursuing it on the new heading.
+                    // Only yield if self is physically inside the priority vehicle's corridor
+                    // (i.e. hasn't already moved out of the way).
                     boolean sameAxis   = selfDir.dot(pvDir) > 0.5;
                     boolean pvIsBehind = selfDir.dot(toPv) < 0;
-                    if (sameAxis && pvIsBehind) return true;
+                    if (sameAxis && pvIsBehind) return isInPriorityCorridor(self, pv);
 
                     // Case 2: PV is on a crossing axis and heading toward self.
                     // Threshold raised 0.5 → 0.7 to close the dead-zone that
@@ -261,17 +337,6 @@ public final class TrafficRuleEvaluator {
         return remaining - vehicle.getLength() / 2.0;
     }
 
-    /**
-     * Xe {@code self} có cần nhường đường vì xung đột tại giao lộ không?
-     *
-     * <p><b>Thuật toán — proximity-based, không dự đoán:</b>
-     * <ol>
-     *   <li>Tìm tâm giao lộ gần xe nhất (từ world).</li>
-     *   <li>Nếu cả xe mình lẫn xe kia đều trong vùng nguy hiểm quanh tâm đó,
-     *       VÀ entry arm khác nhau (khác chiều vào),
-     *       VÀ khoảng cách thực tế đủ gần → trả về true.</li>
-     * </ol>
-     */
     /**
      * Mức độ xung đột tại giao lộ.
      * NONE    — không có xung đột, đi bình thường.

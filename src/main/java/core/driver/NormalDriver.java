@@ -11,56 +11,51 @@ import util.Vector2D;
  *
  * <h2>Thuật toán quyết định</h2>
  * <ol>
+ *   <li>Nếu có xe ưu tiên trong bán kính sirên → YIELD: dạt sang bên nếu cùng làn,
+ *       hoặc dừng nếu khác làn.</li>
  *   <li>Nếu đèn đỏ / vàng phía trước và còn ở phía sau vạch → STOP.</li>
- *   <li>Nếu có xe ưu tiên trong bán kính sirên → YIELD (giảm về 0 và dạt sang).</li>
- *   <li>Nếu khoảng cách đến xe trước < 1.5 × thân xe → BRAKE tỉ lệ.</li>
+ *   <li>Nếu xung đột giao lộ → STOP hoặc BRAKE tùy mức độ.</li>
+ *   <li>Nếu khoảng cách đến xe trước < safeDistance → BRAKE tỉ lệ.</li>
  *   <li>Ngược lại → ACCELERATE đến maxSpeed.</li>
  * </ol>
  */
 public class NormalDriver implements DriverBehavior {
 
     private static final TrafficRuleEvaluator RULES = new TrafficRuleEvaluator();
-    private static final double SAFETY_STOP_RANGE = 200.0; // Range to stop other lanes
+    private static final double SAFETY_STOP_RANGE = 200.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-            // ── 1. Nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ────────────────
-            boolean shouldYield = RULES.shouldYieldToPriorityVehicle(vehicle, world);
-            if (shouldYield) {
-                var priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
-                if (priorityVehicle.isPresent()) {
-                    PriorityVehicle pv = priorityVehicle.get();
+        // ── 1. Nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ────────────────
+        boolean shouldYield = RULES.shouldYieldToPriorityVehicle(vehicle, world);
+        if (shouldYield) {
+            var priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
+            if (priorityVehicle.isPresent()) {
+                PriorityVehicle pv = priorityVehicle.get();
 
-                    // If inside intersection, only yield if we are on a collision trajectory
-                    // with the priority vehicle — don't yield if we've already cleared its path
-                    if (vehicle.isInIntersection()) {
-                        Vector2D selfDir = RULES.movementDirection(vehicle);
-                        Vector2D pvDir   = RULES.movementDirection(pv);
-                        Vector2D toPv    = pv.getPosition().subtract(vehicle.getPosition());
-                        // Are we moving toward each other's paths?
-                        double forwardToPv = selfDir.dot(toPv);
-                        boolean onCollisionPath = forwardToPv > 0
-                            && forwardToPv < vehicle.getLength() * 4.0
-                            && Math.abs(pvDir.dot(toPv.normalize())) < 0.7; // crossing, not same axis
-                        if (!onCollisionPath) {
-                            // Already past or not on trajectory — don't block, let it continue
-                            shouldYield = false;
-                        }
+                // If inside intersection, only yield if we are on a collision trajectory
+                // with the priority vehicle — don't yield if we've already cleared its path
+                if (vehicle.isInIntersection() && !isCollisionTrajectory(vehicle, pv)) {
+                    shouldYield = false;
+                }
+
+                if (shouldYield) {
+                    boolean sameEntry = vehicle.getPath().getEntryArm()
+                            .equals(pv.getPath().getEntryArm());
+                    if (sameEntry) {
+                        // Same road arm → dạt sang bên để nhường đường
+                        DrivingDecision sideShift = sideShiftAwayFromPriority(
+                                vehicle, world, pv, yieldingSideSpeed(vehicle));
+                        return sideShift != null ? sideShift : DrivingDecision.stop();
                     }
 
-                    if (shouldYield) {
-                        String myEntry    = vehicle.getPath().getEntryArm();
-                        String theirEntry = pv.getPath().getEntryArm();
-                        if (myEntry.equals(theirEntry)) {
-                            return DrivingDecision.changeLaneLeft(0);
-                        }
-                        double dist = vehicle.getPosition().distanceTo(pv.getPosition());
-                        if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
-                            return DrivingDecision.stop();
-                        }
+                    double dist = vehicle.getPosition().distanceTo(pv.getPosition());
+                    if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
+                        return DrivingDecision.stop();
                     }
                 }
+            }
         }
 
         // ── Return to lane centre if no longer yielding ──────────────────
@@ -72,7 +67,7 @@ public class NormalDriver implements DriverBehavior {
                 return DrivingDecision.stop();
             }
 
-            if (isMergePathClear(vehicle, world)) {
+            if (RULES.canShiftToOffset(vehicle, world, 0.0)) {
                 return DrivingDecision.mergeBack();
             } else {
                 return DrivingDecision.yield();
@@ -91,24 +86,19 @@ public class NormalDriver implements DriverBehavior {
                 return DrivingDecision.stop();
             }
             if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
-                // Đang trong hộp, có xe khác cũng trong hộp nhưng mình có ưu tiên → chạy chậm vừa
                 return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.55);
             }
         }
 
         // ── 3. Giữ khoảng cách xe trước ────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
-        
-        double speed = vehicle.getSpeed();
-        double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
-        double safeDistance = vehicle.getLength() * 2.0 + 20 + brakingDistance;
+        double safeDistance = safeDistance(vehicle);
 
         if (gap >= 0 && gap < safeDistance) {
-            // Giảm tốc tỉ lệ: càng gần càng chậm
             if (gap < vehicle.getLength() * 0.8) {
                 return DrivingDecision.stop();
             }
-            
+
             double ratio      = Math.max(0, gap / safeDistance);
             double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.6;
             return DrivingDecision.brake(targetSpeed);
@@ -118,47 +108,77 @@ public class NormalDriver implements DriverBehavior {
         return DrivingDecision.accelerate(vehicle.getMaxSpeed());
     }
 
-    private boolean isMergePathClear(Vehicle vehicle, SimulationWorld world) {
-        double myOffset = vehicle.getLateralOffset();
-        double targetOffset = 0.0; // merging toward centre
+    /**
+     * Kiểm tra xem xe có đang trên quỹ đạo va chạm với xe ưu tiên không.
+     */
+    private boolean isCollisionTrajectory(Vehicle vehicle, PriorityVehicle pv) {
+        Vector2D selfDir = RULES.movementDirection(vehicle);
+        Vector2D pvDir   = RULES.movementDirection(pv);
+        Vector2D toPv    = pv.getPosition().subtract(vehicle.getPosition());
+        double forwardToPv = selfDir.dot(toPv);
+        return forwardToPv > 0
+                && forwardToPv < vehicle.getLength() * 4.0
+                && Math.abs(pvDir.dot(toPv.normalize())) < 0.7;
+    }
 
-        // The "merge side" is the range of lateral offsets between myOffset and 0.
-        // Any other vehicle whose lateral offset falls in that range (i.e. is between
-        // us and the lane centre) is blocking our merge path and we must wait for it.
-        double mergeMin = Math.min(myOffset, targetOffset);
-        double mergeMax = Math.max(myOffset, targetOffset);
+    /**
+     * Tìm hướng dạt sang bên tốt nhất để nhường đường cho xe ưu tiên,
+     * chọn phía nào tạo ra khoảng cách ngang lớn nhất với xe ưu tiên.
+     */
+    private DrivingDecision sideShiftAwayFromPriority(
+            Vehicle vehicle, SimulationWorld world, PriorityVehicle priorityVehicle, double targetSpeed) {
+        double currentDistance = RULES.lateralDistanceFromMovementLine(
+                priorityVehicle, vehicle.getEffectivePosition());
+        DrivingDecision bestDecision = null;
+        double bestDistance = currentDistance;
 
-        return world.getVehicles().stream()
-            .filter(other -> other != vehicle && !other.isPriorityVehicle())
-            .noneMatch(other -> {
-                // Must be on same road arm (same direction)
-                boolean samePath = other.getPath().getEntryArm()
-                    .equals(vehicle.getPath().getEntryArm());
-                if (!samePath) return false;
+        double preferredOffset = preferredSideOffset(vehicle);
+        for (double targetOffset : new double[]{preferredOffset, -preferredOffset}) {
+            if (!RULES.canShiftToOffset(vehicle, world, targetOffset)) continue;
 
-                double otherOffset = other.getLateralOffset();
+            double candidateDistance = RULES.lateralDistanceFromMovementLine(
+                    priorityVehicle, RULES.effectivePositionAtOffset(vehicle, targetOffset));
+            if (candidateDistance > bestDistance) {
+                bestDistance = candidateDistance;
+                bestDecision = sideDecisionForOffset(targetOffset, targetSpeed);
+            }
+        }
 
-                // Is the other vehicle's offset inside our merge sweep range?
-                boolean blocksLateral = otherOffset >= mergeMin && otherOffset < mergeMax;
-                if (!blocksLateral) return false;
+        return bestDecision;
+    }
 
-                // And close enough longitudinally to be a collision risk
-                Vector2D toOther = other.getPosition().subtract(vehicle.getPosition());
-                Vector2D myDir = vehicle.getVelocity().length() > 1e-9
-                    ? vehicle.getVelocity().normalize()
-                    : vehicle.getPath().getWaypoints().get(vehicle.getWaypointIndex())
-                        .subtract(vehicle.getPosition()).normalize();
-                double forward = myDir.dot(toOther);
-                // block if the car is ahead OR alongside (not just strictly behind)
-                return forward > -vehicle.getLength() && Math.abs(forward) < vehicle.getLength() * 3.0;
-            });
+    /**
+     * Xác định offset ưu tiên (trái hoặc phải) dựa trên path id.
+     */
+    private double preferredSideOffset(Vehicle vehicle) {
+        String pathId = vehicle.getPath().getId();
+        if (!pathId.startsWith("grid-") && !pathId.startsWith("3w-")) {
+            if (pathId.endsWith("1")) return 50.0;
+            if (pathId.endsWith("0")) return -50.0;
+        }
+        return -50.0;
+    }
+
+    private DrivingDecision sideDecisionForOffset(double offset, double targetSpeed) {
+        return offset < 0
+                ? DrivingDecision.changeLaneLeft(targetSpeed)
+                : DrivingDecision.changeLaneRight(targetSpeed);
+    }
+
+    private double yieldingSideSpeed(Vehicle vehicle) {
+        return Math.max(18.0, vehicle.getMaxSpeed() * 0.28);
+    }
+
+    private double safeDistance(Vehicle vehicle) {
+        double speed = vehicle.getSpeed();
+        double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
+        return vehicle.getLength() * 2.0 + 20 + brakingDistance;
     }
 
     private boolean isAmbulanceClear(Vehicle vehicle, SimulationWorld world) {
         return world.getVehicles().stream()
             .filter(v -> v instanceof PriorityVehicle pv && pv.isSirenActive())
             .noneMatch(pv -> {
-                // Only delay merge-back for ambulances on the same road arm
                 boolean sameArm = ((PriorityVehicle) pv).getPath().getEntryArm()
                     .equals(vehicle.getPath().getEntryArm());
                 if (!sameArm) return false;

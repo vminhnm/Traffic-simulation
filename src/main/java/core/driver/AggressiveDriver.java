@@ -17,7 +17,7 @@ import java.util.Optional;
  *       bỏ qua đèn vàng hoàn toàn.</li>
  *   <li>Khoảng cách an toàn bằng 0.6× so với NormalDriver.</li>
  *   <li>Tốc độ mục tiêu = {@code maxSpeed × 1.25} (tự vượt giới hạn 25%).</li>
- *   <li>Vẫn nhường xe ưu tiên — hung hăng không có nghĩa là liều mạng.</li>
+ *   <li>Vẫn nhường xe ưu tiên bằng cách dạt sang bên (không liều mạng).</li>
  * </ul>
  */
 public class AggressiveDriver implements DriverBehavior {
@@ -33,21 +33,20 @@ public class AggressiveDriver implements DriverBehavior {
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        // ── 1. Vẫn phải nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ──────
+        // ── 1. Vẫn phải nhường xe ưu tiên ──────────────────────────
         if (RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
             Optional<PriorityVehicle> priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
             if (priorityVehicle.isPresent()) {
                 PriorityVehicle pv = priorityVehicle.get();
-                String myPathId = vehicle.getPath().getId();
-                String theirPathId = pv.getPath().getId();
 
-                String myEntry    = vehicle.getPath().getEntryArm();
-                String theirEntry = pv.getPath().getEntryArm();
-                if (myEntry.equals(theirEntry)) {
-                    // Same road arm → move out of the lane
-                    return DrivingDecision.changeLaneLeft(vehicle.getAcceleration() * 0.3);
+                boolean sameEntry = vehicle.getPath().getEntryArm()
+                        .equals(pv.getPath().getEntryArm());
+                if (sameEntry) {
+                    // Same road arm → dạt sang bên để nhường đường
+                    DrivingDecision sideShift = sideShiftAwayFromPriority(
+                            vehicle, world, pv, yieldingSideSpeed(vehicle));
+                    return sideShift != null ? sideShift : DrivingDecision.stop();
                 }
-
 
                 // Different lane → stop if in range and not already moving out
                 double dist = vehicle.getPosition().distanceTo(pv.getPosition());
@@ -67,7 +66,6 @@ public class AggressiveDriver implements DriverBehavior {
         {
             var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
             if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
-                // Aggressive: brake mạnh thay vì stop hẳn, nhưng gần như dừng
                 return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.05);
             }
             if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
@@ -86,6 +84,50 @@ public class AggressiveDriver implements DriverBehavior {
 
         // ── 4. Phóng nhanh hơn giới hạn ─────────────────────────────
         return DrivingDecision.accelerate(vehicle.getMaxSpeed() * SPEED_FACTOR);
+    }
+
+    /**
+     * Tìm hướng dạt sang bên tốt nhất để nhường đường cho xe ưu tiên.
+     */
+    private DrivingDecision sideShiftAwayFromPriority(
+            Vehicle vehicle, SimulationWorld world, PriorityVehicle priorityVehicle, double targetSpeed) {
+        double currentDistance = RULES.lateralDistanceFromMovementLine(
+                priorityVehicle, vehicle.getEffectivePosition());
+        DrivingDecision bestDecision = null;
+        double bestDistance = currentDistance;
+
+        double preferredOffset = preferredSideOffset(vehicle);
+        for (double targetOffset : new double[]{preferredOffset, -preferredOffset}) {
+            if (!RULES.canShiftToOffset(vehicle, world, targetOffset)) continue;
+
+            double candidateDistance = RULES.lateralDistanceFromMovementLine(
+                    priorityVehicle, RULES.effectivePositionAtOffset(vehicle, targetOffset));
+            if (candidateDistance > bestDistance) {
+                bestDistance = candidateDistance;
+                bestDecision = sideDecisionForOffset(targetOffset, targetSpeed);
+            }
+        }
+
+        return bestDecision;
+    }
+
+    private double preferredSideOffset(Vehicle vehicle) {
+        String pathId = vehicle.getPath().getId();
+        if (!pathId.startsWith("grid-") && !pathId.startsWith("3w-")) {
+            if (pathId.endsWith("1")) return 50.0;
+            if (pathId.endsWith("0")) return -50.0;
+        }
+        return -50.0;
+    }
+
+    private DrivingDecision sideDecisionForOffset(double offset, double targetSpeed) {
+        return offset < 0
+                ? DrivingDecision.changeLaneLeft(targetSpeed)
+                : DrivingDecision.changeLaneRight(targetSpeed);
+    }
+
+    private double yieldingSideSpeed(Vehicle vehicle) {
+        return Math.max(20.0, vehicle.getMaxSpeed() * 0.32);
     }
 
     @Override
