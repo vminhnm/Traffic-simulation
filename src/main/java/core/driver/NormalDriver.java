@@ -56,13 +56,15 @@ public class NormalDriver implements DriverBehavior {
         }
 
         // ── 2b. Kiểm tra xung đột trong giao lộ (xe rẽ chéo) ────────
-        if (RULES.hasIntersectionConflict(vehicle, world)) {
-            // Nếu đã trong giao lộ: brake nhẹ để tránh đâm
-            // Nếu chưa vào: dừng trước vạch
-            if (vehicle.isInIntersection()) {
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.25);
+        {
+            var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
+                return DrivingDecision.stop();
             }
-            return DrivingDecision.stop();
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
+                // Đang trong hộp, có xe khác cũng trong hộp nhưng mình có ưu tiên → chạy chậm vừa
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.55);
+            }
         }
 
         // ── 3. Giữ khoảng cách xe trước ────────────────────────────

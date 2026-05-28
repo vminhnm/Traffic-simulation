@@ -65,11 +65,15 @@ public class AggressiveDriver implements DriverBehavior {
         }
 
         // ── 2b. Kiểm tra xung đột giao lộ — hung hăng vẫn tránh đâm ─
-        if (RULES.hasIntersectionConflict(vehicle, world)) {
-            if (vehicle.isInIntersection()) {
-                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.3);
+        {
+            var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
+                // Aggressive: brake mạnh thay vì stop hẳn, nhưng gần như dừng
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.05);
             }
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.1);
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.65);
+            }
         }
 
         // ── 3. Khoảng cách bám sát ──────────────────────────────────

@@ -184,6 +184,19 @@ public class TrafficSimulationUI extends Application {
         world.registerTrafficLight(lightSE);
         setLightsAuto(autoLights);
 
+        // Đăng ký tâm giao lộ để phát hiện xung đột
+        world.clearIntersectionCenters();
+        switch (currentMode) {
+            case FOUR_WAY, THREE_WAY, FIVE_WAY ->
+                world.addIntersectionCenter(new Vector2D(cx(), cy()));
+            case GRID -> {
+                double[] xs = { cx() - 200, cx(), cx() + 200 };
+                double[] ys = { cy() - 150, cy(), cy() + 150 };
+                for (double gx : xs) for (double gy : ys)
+                    world.addIntersectionCenter(new Vector2D(gx, gy));
+            }
+        }
+
         // Seed a few vehicles with staggered starting positions
         switch (currentMode) {
             case FOUR_WAY -> seedFourWay();
@@ -970,14 +983,13 @@ public class TrafficSimulationUI extends Application {
         g.scale(scale, scale);
 
         if (s.isCrashed()) {
-            var explosionStream = TrafficSimulationUI.class.getResourceAsStream("/assets/sprites/explosion.png");
-            Image explosion = explosionStream == null ? null : new Image(explosionStream);
+            Image explosion = SpriteLoader.get(graphics.sprite.RenderAssetKey.EXPLOSION);
             if (explosion != null) {
-                double sz = Math.max(s.getLength(), s.getWidth());
+                double sz = Math.max(s.getLength(), s.getWidth()) * 1.4;
                 g.drawImage(explosion, -sz/2, -sz/2, sz, sz);
             } else {
-                g.setFill(Color.web("#374151"));
-                g.fillRoundRect(-s.getLength()/2, -s.getWidth()/2, s.getLength(), s.getWidth(), 4, 4);
+                g.setFill(Color.web("#f97316", 0.9));
+                g.fillOval(-s.getLength()/2, -s.getWidth()/2, s.getLength(), s.getWidth());
             }
             g.restore(); return;
         }
