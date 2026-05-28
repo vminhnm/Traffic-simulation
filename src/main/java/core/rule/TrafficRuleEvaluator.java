@@ -117,17 +117,46 @@ public final class TrafficRuleEvaluator {
      * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
      */
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
-        Vector2D pos  = self.getEffectivePosition();
+        Vector2D pos = self.getEffectivePosition();
 
-        return world.getVehicles().stream()
-                .filter(v -> v != self)
-                .filter(v -> isAheadInSameLane(self, v))
-                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
+        return nearestFrontVehicle(self, world)
                 .map(front -> {
                     double centerDist = front.getEffectivePosition().distanceTo(pos);
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
+    }
+
+    public Optional<Vehicle> nearestFrontVehicle(Vehicle self, SimulationWorld world) {
+        Vector2D pos = self.getEffectivePosition();
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> !v.isCrashed() && !v.isFinished())
+                .filter(v -> isAheadInSameLane(self, v))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)));
+    }
+
+    public boolean canShiftToOffset(Vehicle self, SimulationWorld world, double targetOffset) {
+        Vector2D dir = movementDirection(self);
+        if (dir.length() < 1e-9) return false;
+
+        Vector2D targetPos = effectivePositionAtOffset(self, targetOffset);
+        double frontClear = Math.max(self.getLength() * 4.0, 120.0);
+        double rearClear = Math.max(self.getLength() * 1.5, 45.0);
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> !v.isCrashed() && !v.isFinished())
+                .noneMatch(other -> {
+                    Vector2D toOther = other.getEffectivePosition().subtract(targetPos);
+                    double forward = dir.dot(toOther);
+                    if (forward < -rearClear || forward > frontClear) return false;
+
+                    Vector2D lateral = toOther.subtract(dir.multiply(forward));
+                    double lateralClearance = (self.getWidth() + other.getWidth()) / 2.0 + 2.0;
+                    return lateral.length() <= lateralClearance;
+                });
     }
 
     /**
@@ -162,6 +191,29 @@ public final class TrafficRuleEvaluator {
         return Vector2D.ZERO;
     }
 
+    public Vector2D effectivePositionAtOffset(Vehicle vehicle, double lateralOffset) {
+        Vector2D dir = movementDirection(vehicle);
+        if (dir.length() < 1e-9) return vehicle.getEffectivePosition();
+
+        Vector2D rightVector = new Vector2D(-dir.y, dir.x);
+        return vehicle.getPosition().add(rightVector.multiply(lateralOffset));
+    }
+
+    public double lateralDistanceFromMovementLine(Vehicle reference, Vector2D point) {
+        Vector2D dir = movementDirection(reference);
+        if (dir.length() < 1e-9) return Double.POSITIVE_INFINITY;
+
+        Vector2D toPoint = point.subtract(reference.getEffectivePosition());
+        double forward = dir.dot(toPoint);
+        return toPoint.subtract(dir.multiply(forward)).length();
+    }
+
+    public boolean isInPriorityCorridor(Vehicle self, PriorityVehicle priorityVehicle) {
+        double lateralDistance = lateralDistanceFromMovementLine(priorityVehicle, self.getEffectivePosition());
+        double blockingThreshold = (self.getWidth() + priorityVehicle.getWidth()) / 2.0 + 2.0;
+        return lateralDistance <= blockingThreshold;
+    }
+
     // ─────────────────────────────────────────────────────────────────
     //  Xe ưu tiên
     // ─────────────────────────────────────────────────────────────────
@@ -194,7 +246,7 @@ public final class TrafficRuleEvaluator {
                     // now pursuing it on the new heading.
                     boolean sameAxis   = selfDir.dot(pvDir) > 0.5;
                     boolean pvIsBehind = selfDir.dot(toPv) < 0;
-                    if (sameAxis && pvIsBehind) return true;
+                    if (sameAxis && pvIsBehind) return isInPriorityCorridor(self, pv);
 
                     // Case 2: PV is on a crossing axis and heading toward self.
                     // Threshold raised 0.5 → 0.7 to close the dead-zone that

@@ -49,6 +49,11 @@ public abstract class Vehicle implements Movable {
     protected double length;
     protected double width;
 
+    /** One adjacent-lane shift. Keep lateral movement inside the road drawing. */
+    public static final double SIDE_LANE_OFFSET = 24.0;
+    private static final double LATERAL_SHIFT_RATE = 35.0;
+    private static final double MERGE_BACK_RATE = 24.0;
+
     // ── Đường đi ─────────────────────────────────────────────────────
     /** Đường đi được gán khi xe vào scene. */
     protected VehiclePath path;
@@ -184,8 +189,6 @@ public abstract class Vehicle implements Movable {
                 stoppedTimer = 0;
                 currentSpeed = Math.max(currentSpeed - acceleration * deltaTime, 0);
                 yielding     = true;
-                // Xe dạt sang lề phải để nhường đường cho xe ưu tiên
-                lateralOffset = Math.min(lateralOffset + 20 * deltaTime, 15);
                 if (currentSpeed == 0) stopped = true;
             }
             case MERGE_BACK -> {
@@ -193,8 +196,8 @@ public abstract class Vehicle implements Movable {
                 currentSpeed = 0;
                 stopped = true;
                 stoppedTimer = 0;
-                if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - 15 * deltaTime);
-                else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
+                if (lateralOffset > 0) lateralOffset = Math.max(0, lateralOffset - MERGE_BACK_RATE * deltaTime);
+                else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + MERGE_BACK_RATE * deltaTime);
             }
             case CHANGE_LANE_LEFT -> {
                 double target = decision.getTargetSpeed();
@@ -204,7 +207,7 @@ public abstract class Vehicle implements Movable {
                 } else {
                     currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 }
-                lateralOffset = Math.max(lateralOffset - 25 * deltaTime, -50);
+                lateralOffset = Math.max(lateralOffset - LATERAL_SHIFT_RATE * deltaTime, -SIDE_LANE_OFFSET);
             }
             case CHANGE_LANE_RIGHT -> {
                 double target = decision.getTargetSpeed();
@@ -214,7 +217,7 @@ public abstract class Vehicle implements Movable {
                 } else {
                     currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 }
-                lateralOffset = Math.max(lateralOffset + 25 * deltaTime, -50);
+                lateralOffset = Math.min(lateralOffset + LATERAL_SHIFT_RATE * deltaTime, SIDE_LANE_OFFSET);
             }
         }
     }
