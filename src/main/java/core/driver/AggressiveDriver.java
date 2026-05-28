@@ -71,9 +71,6 @@ public class AggressiveDriver implements DriverBehavior {
 
         // ── 3. Vượt xe chậm nếu có khoảng trống bên cạnh làn ────────
         if (RULES.hasSlowFrontVehicle(vehicle, world)) {
-            if (RULES.canOvertakeLeft(vehicle, world)) {
-                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * SPEED_FACTOR);
-            }
             if (RULES.canOvertakeRight(vehicle, world)) {
                 return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * SPEED_FACTOR);
             }

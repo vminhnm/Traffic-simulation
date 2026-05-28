@@ -32,6 +32,8 @@ public final class TrafficRuleEvaluator {
     private static final double LIGHT_CHECK_DISTANCE = 80.0;
     /** Khoảng cách (px) để coi là "đã vào vạch dừng" — không còn quay lại được. */
     private static final double COMMITTED_DISTANCE   = 10.0;
+    private static final double LATERAL_MANEUVER_OFFSET = 50.0;
+    private static final double DRIVABLE_CORRIDOR_HALF_WIDTH = 64.0;
 
     // ─────────────────────────────────────────────────────────────────
     //  Đèn giao thông
@@ -200,26 +202,45 @@ public final class TrafficRuleEvaluator {
     }
 
     public boolean canOvertakeLeft(Vehicle self, SimulationWorld world) {
-        return isLateralPathClear(self, world, -50.0);
+        return isLateralPathClear(self, world, -LATERAL_MANEUVER_OFFSET);
     }
 
     public boolean canOvertakeRight(Vehicle self, SimulationWorld world) {
-        return isLateralPathClear(self, world, 50.0);
+        return isLateralPathClear(self, world, LATERAL_MANEUVER_OFFSET);
     }
 
     public boolean canYieldRight(Vehicle self, SimulationWorld world) {
-        return isLateralPathClear(self, world, 50.0);
+        return isLateralPathClear(self, world, LATERAL_MANEUVER_OFFSET);
     }
 
     public boolean canYieldLeft(Vehicle self, SimulationWorld world) {
-        return isLateralPathClear(self, world, -50.0);
+        return isLateralPathClear(self, world, -LATERAL_MANEUVER_OFFSET);
     }
 
     public boolean isLateralPathClear(Vehicle self, SimulationWorld world, double targetOffset) {
         double currentOffset = self.getLateralOffset();
         double midOffset = (currentOffset + targetOffset) / 2.0;
+        if (!hasRoadSpaceForLateralOffset(self, midOffset)
+                || !hasRoadSpaceForLateralOffset(self, targetOffset)) {
+            return false;
+        }
+
         return isProjectedVehicleClear(self, world, midOffset)
                 && isProjectedVehicleClear(self, world, targetOffset);
+    }
+
+    private boolean hasRoadSpaceForLateralOffset(Vehicle self, double targetOffset) {
+        // UI-generated paths use right-hand traffic lanes. Positive lateral offset moves
+        // beside the lane toward the drivable road center; negative offset points outward.
+        if (targetOffset < 0) return false;
+
+        Vector2D center = centerAtLateralOffset(self, targetOffset);
+        Vector2D forward = movementDirection(self);
+        Vector2D forwardCenter = center.add(forward.multiply(self.getLength() * 0.75));
+        double halfBodyWidth = self.getWidth() / 2.0;
+
+        return distanceToPath(center, self.getPath()) + halfBodyWidth <= DRIVABLE_CORRIDOR_HALF_WIDTH
+                && distanceToPath(forwardCenter, self.getPath()) + halfBodyWidth <= DRIVABLE_CORRIDOR_HALF_WIDTH;
     }
 
     private boolean isProjectedVehicleClear(Vehicle self, SimulationWorld world, double lateralOffset) {
@@ -251,6 +272,28 @@ public final class TrafficRuleEvaluator {
                 Math.cos(vehicle.getRotation() + Math.PI / 2.0),
                 Math.sin(vehicle.getRotation() + Math.PI / 2.0));
         return vehicle.getPosition().add(rightVector.multiply(lateralOffset));
+    }
+
+    private double distanceToPath(Vector2D point, VehiclePath path) {
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = 0; i < path.getWaypoints().size() - 1; i++) {
+            best = Math.min(best, distanceToSegment(
+                    point,
+                    path.getWaypoints().get(i),
+                    path.getWaypoints().get(i + 1)));
+        }
+        return best;
+    }
+
+    private double distanceToSegment(Vector2D point, Vector2D start, Vector2D end) {
+        Vector2D segment = end.subtract(start);
+        double segmentLenSq = segment.dot(segment);
+        if (segmentLenSq < 1e-9) return point.distanceTo(start);
+
+        double t = point.subtract(start).dot(segment) / segmentLenSq;
+        t = Math.max(0.0, Math.min(1.0, t));
+        Vector2D projection = start.add(segment.multiply(t));
+        return point.distanceTo(projection);
     }
 
     /**

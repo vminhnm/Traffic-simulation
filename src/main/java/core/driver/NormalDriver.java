@@ -62,9 +62,6 @@ public class NormalDriver implements DriverBehavior {
 
         // ── 3. Vượt xe chậm nếu phần bên cạnh làn đang trống ────────
         if (RULES.hasSlowFrontVehicle(vehicle, world)) {
-            if (RULES.canOvertakeLeft(vehicle, world)) {
-                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.9);
-            }
             if (RULES.canOvertakeRight(vehicle, world)) {
                 return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * 0.9);
             }

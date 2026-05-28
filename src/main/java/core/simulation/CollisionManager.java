@@ -73,10 +73,10 @@ public final class CollisionManager {
         if (first.isPriorityVehicle() && second.isPriorityVehicle()) {
             type = CollisionEvent.Type.PRIORITY_YIELD;
         } else if (first.isPriorityVehicle()) {
-            second.setCrashed();
+            suppressRepeatedPriorityContact(first, second);
             type = CollisionEvent.Type.PRIORITY_PUSH;
         } else if (second.isPriorityVehicle()) {
-            first.setCrashed();
+            suppressRepeatedPriorityContact(first, second);
             type = CollisionEvent.Type.PRIORITY_PUSH;
         } else {
             first.setCrashed();
@@ -85,6 +85,11 @@ public final class CollisionManager {
         }
 
         return new CollisionEvent(first, second, type, midpoint(first, second));
+    }
+
+    private void suppressRepeatedPriorityContact(Vehicle first, Vehicle second) {
+        cooldownByVehicleId.put(first.getId(), spawnCooldownSeconds);
+        cooldownByVehicleId.put(second.getId(), spawnCooldownSeconds);
     }
 
     private Vector2D midpoint(Vehicle first, Vehicle second) {

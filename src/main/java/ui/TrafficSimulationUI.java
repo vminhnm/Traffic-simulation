@@ -93,6 +93,7 @@ public class TrafficSimulationUI extends Application {
     private Button    btnStartPause;
     private TextArea  logArea;
     private VBox      lightStatusBox;
+    private ComboBox<String> manualDirectionCombo;
 
     // ── Stats ──────────────────────────────────────────────────────
     private double          simTime      = 0;
@@ -404,8 +405,8 @@ public class TrafficSimulationUI extends Application {
         styleCombo(cbType);
 
         // Direction options depend on mode — rebuilt on reset
-        ComboBox<String> cbDir = new ComboBox<>();
-        rebuildDirCombo(cbDir);
+        manualDirectionCombo = new ComboBox<>();
+        rebuildDirCombo();
 
         ComboBox<String> cbDriver = new ComboBox<>();
         cbDriver.getItems().addAll("🧑 Normal","😤 Aggressive","🚨 Emergency");
@@ -417,7 +418,7 @@ public class TrafficSimulationUI extends Application {
         btnAdd.setMaxWidth(Double.MAX_VALUE);
         btnAdd.setOnAction(e -> {
             String typeKey = typeKeys[cbType.getSelectionModel().getSelectedIndex()];
-            int dirIdx     = cbDir.getSelectionModel().getSelectedIndex();
+            int dirIdx     = manualDirectionCombo.getSelectionModel().getSelectedIndex();
             var path       = getPathByModeAndDir(dirIdx);
             var drv = switch (cbDriver.getSelectionModel().getSelectedIndex()) {
                 case 1 -> new AggressiveDriver();
@@ -429,7 +430,7 @@ public class TrafficSimulationUI extends Application {
 
         panel.getChildren().addAll(
             smallLbl("Loại xe:"), cbType,
-            smallLbl("Hướng đi:"), cbDir,
+            smallLbl("Hướng đi:"), manualDirectionCombo,
             smallLbl("Kiểu lái:"), cbDriver,
             btnAdd
         );
@@ -479,28 +480,34 @@ public class TrafficSimulationUI extends Application {
         return sp;
     }
 
-    private void rebuildDirCombo(ComboBox<String> cb) {
-        cb.getItems().clear();
+    private void rebuildDirCombo() {
+        if (manualDirectionCombo == null) return;
+        manualDirectionCombo.getItems().clear();
         switch (currentMode) {
-            case FOUR_WAY -> cb.getItems().addAll(
+            case FOUR_WAY -> manualDirectionCombo.getItems().addAll(
                 "⬇ Bắc→Nam","↱ Bắc→Đông","↰ Bắc→Tây",
                 "⬆ Nam→Bắc","↱ Nam→Đông","↰ Nam→Tây",
                 "⬅ Đông→Tây","↱ Đông→Bắc","↰ Đông→Nam",
                 "➡ Tây→Đông","↱ Tây→Nam","↰ Tây→Bắc");
-            case THREE_WAY -> cb.getItems().addAll("⬇ Bắc→Nam","⬆ Nam→Bắc","↱ Tây→Bắc","↳ Tây→Nam","↰ Bắc→Tây","↲ Nam→Tây");
-            case FIVE_WAY -> cb.getItems().addAll(
+            case THREE_WAY -> manualDirectionCombo.getItems().addAll(
+                "⬇ Bắc→Nam","⬆ Nam→Bắc",
+                "↱ Tây→Bắc","↳ Tây→Nam",
+                "↰ Bắc→Tây","↲ Nam→Tây");
+            case FIVE_WAY -> manualDirectionCombo.getItems().addAll(
                 "⬇ Bắc→Nam","↱ Bắc→Đông","↗ Bắc→Đông-Bắc",
                 "⬆ Nam→Bắc","↰ Nam→Tây",
                 "⬅ Đông→Tây","↱ Đông→Bắc",
                 "➡ Tây→Đông","↳ Tây→Nam",
                 "↙ Đông-Bắc→Tây","↙ Đông-Bắc→Nam","↙ Đông-Bắc→Bắc");
-            case GRID -> cb.getItems().addAll(
-                "⬇ Cột trái","⬆ Cột giữa","⬇ Cột phải",
-                "➡ Hàng trên","⬅ Hàng giữa","➡ Hàng dưới",
-                "↱ Trái→Xuống","↰ Trái→Lên","↳ Trên→Phải",
-                "↲ Trên→Trái","↱ Phải→Lên","↳ Phải→Xuống");
+            case GRID -> manualDirectionCombo.getItems().addAll(
+                "⬇ Bắc 1→Nam 1","⬆ Nam 2→Bắc 2","⬇ Bắc 3→Nam 3",
+                "➡ Tây 1→Đông 1","⬅ Đông 2→Tây 2","➡ Tây 3→Đông 3",
+                "↳ Tây 1→Nam 1","↱ Tây 2→Bắc 1",
+                "↱ Bắc 2→Đông 1","↰ Bắc 3→Tây 1",
+                "↰ Đông 2→Bắc 3","↲ Đông 1→Nam 3");
         }
-        cb.setValue(cb.getItems().get(0));
+        manualDirectionCombo.setValue(manualDirectionCombo.getItems().get(0));
+        styleCombo(manualDirectionCombo);
     }
 
     private HBox buildStatusBar() {
@@ -1399,6 +1406,7 @@ public class TrafficSimulationUI extends Application {
         totalTravelTime = 0;
         spawnTimes.clear();
         initWorld();
+        rebuildDirCombo();
         engine = new SimulationEngine(world);
         engine.start(); lastNano=0;
         SoundManager.loop(SoundType.TRAFFIC_AMBIENCE);

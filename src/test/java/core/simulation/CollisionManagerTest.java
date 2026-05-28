@@ -45,7 +45,7 @@ class CollisionManagerTest {
     }
 
     @Test
-    void priorityVehicleOnlyCrashesNormalVehicle() {
+    void priorityVehicleContactDoesNotCrashNormalVehicle() {
         Ambulance ambulance = new Ambulance("amb-1", pathAt(0, 0));
         Car car = new Car("car-1", pathAt(5, 0), new NormalDriver());
         CollisionManager manager = new CollisionManager(0);
@@ -55,7 +55,23 @@ class CollisionManagerTest {
         assertEquals(1, events.size());
         assertEquals(CollisionEvent.Type.PRIORITY_PUSH, events.get(0).getType());
         assertFalse(ambulance.isCrashed());
-        assertTrue(car.isCrashed());
+        assertFalse(car.isCrashed());
+    }
+
+    @Test
+    void priorityVehicleContactStartsCooldownToAvoidRepeatedPushEvents() {
+        Ambulance ambulance = new Ambulance("amb-1", pathAt(0, 0));
+        Car car = new Car("car-1", pathAt(5, 0), new NormalDriver());
+        CollisionManager manager = new CollisionManager(2.0);
+        SimulationWorld world = worldWith(ambulance, car);
+
+        List<CollisionEvent> firstEvents = manager.detectAndResolve(world);
+        List<CollisionEvent> secondEvents = manager.detectAndResolve(world);
+
+        assertEquals(1, firstEvents.size());
+        assertTrue(secondEvents.isEmpty());
+        assertFalse(ambulance.isCrashed());
+        assertFalse(car.isCrashed());
     }
 
     @Test

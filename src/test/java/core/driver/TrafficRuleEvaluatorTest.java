@@ -147,7 +147,7 @@ public class TrafficRuleEvaluatorTest {
     }
 
     @Test
-    void slowFrontVehicleCanBeOvertakenWhenSidePathIsClear() {
+    void slowFrontVehicleCanBeOvertakenWhenRightSidePathIsClear() {
         TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
         SimulationWorld world = new SimulationWorld();
         Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
@@ -156,7 +156,7 @@ public class TrafficRuleEvaluatorTest {
         world.addVehicle(slowFront);
 
         assertTrue(evaluator.hasSlowFrontVehicle(self, world));
-        assertTrue(evaluator.canOvertakeLeft(self, world));
+        assertTrue(evaluator.canOvertakeRight(self, world));
     }
 
     @Test
@@ -165,27 +165,34 @@ public class TrafficRuleEvaluatorTest {
         SimulationWorld world = new SimulationWorld();
         Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
         Car slowFront = new Car("front", createPathAt(60, 0), new NormalDriver());
-        Car sideBlocker = new Car("blocker", createPathAt(0, -50), new NormalDriver());
+        Car sideBlocker = new Car("blocker", createPathAt(0, 50), new NormalDriver());
         world.addVehicle(self);
         world.addVehicle(slowFront);
         world.addVehicle(sideBlocker);
 
         assertTrue(evaluator.hasSlowFrontVehicle(self, world));
-        assertFalse(evaluator.canOvertakeLeft(self, world));
+        assertFalse(evaluator.canOvertakeRight(self, world));
     }
 
     @Test
-    void overtakeCanUseRightSideWhenLeftSideIsBlocked() {
+    void overtakeCannotUseOutwardLeftSide() {
         TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
         SimulationWorld world = new SimulationWorld();
         Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
         Car slowFront = new Car("front", createPathAt(60, 0), new NormalDriver());
-        Car leftBlocker = new Car("left-blocker", createPathAt(0, -50), new NormalDriver());
         world.addVehicle(self);
         world.addVehicle(slowFront);
-        world.addVehicle(leftBlocker);
 
         assertFalse(evaluator.canOvertakeLeft(self, world));
-        assertTrue(evaluator.canOvertakeRight(self, world));
+    }
+
+    @Test
+    void lateralManeuverIsBlockedWhenProjectedBodyLeavesRoadCorridor() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
+        world.addVehicle(self);
+
+        assertFalse(evaluator.isLateralPathClear(self, world, 80.0));
     }
 }

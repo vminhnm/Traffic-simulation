@@ -34,7 +34,7 @@ public class NormalDriverTest {
 
         DrivingDecision decision = new NormalDriver().decide(self, world);
 
-        assertEquals(DrivingAction.CHANGE_LANE_LEFT, decision.getAction());
+        assertEquals(DrivingAction.CHANGE_LANE_RIGHT, decision.getAction());
     }
 
     @Test
