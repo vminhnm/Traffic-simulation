@@ -4,7 +4,6 @@ import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
-import util.Vector2D;
 
 /**
  * <b>Lái xe bình thường</b> — tuân thủ đèn giao thông, giữ khoảng cách an toàn.
@@ -37,9 +36,15 @@ public class NormalDriver implements DriverBehavior {
                 String myLaneType = myPathId.replaceAll("[0-9]", "");
                 String theirLaneType = theirPathId.replaceAll("[0-9]", "");
 
-                // Same lane → move out
+                // Same lane -> move beside the lane if a side corridor is clear.
                 if (myLaneType.equals(theirLaneType)) {
-                    return DrivingDecision.changeLaneLeft(0);
+                    if (RULES.canYieldRight(vehicle, world)) {
+                        return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * 0.2);
+                    }
+                    if (RULES.canYieldLeft(vehicle, world)) {
+                        return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.2);
+                    }
+                    return DrivingDecision.stop();
                 }
 
                 // Different lane → stop if in range and not already moving out
@@ -55,7 +60,17 @@ public class NormalDriver implements DriverBehavior {
             return DrivingDecision.stop();
         }
 
-        // ── 3. Giữ khoảng cách xe trước ────────────────────────────
+        // ── 3. Vượt xe chậm nếu phần bên cạnh làn đang trống ────────
+        if (RULES.hasSlowFrontVehicle(vehicle, world)) {
+            if (RULES.canOvertakeLeft(vehicle, world)) {
+                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.9);
+            }
+            if (RULES.canOvertakeRight(vehicle, world)) {
+                return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * 0.9);
+            }
+        }
+
+        // ── 4. Giữ khoảng cách xe trước ────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         double safeDistance = vehicle.getLength() * 1.5 + 15;
 
@@ -66,7 +81,7 @@ public class NormalDriver implements DriverBehavior {
             return DrivingDecision.brake(targetSpeed);
         }
 
-        // ── 4. Chạy bình thường ─────────────────────────────────────
+        // ── 5. Chạy bình thường ─────────────────────────────────────
         return DrivingDecision.accelerate(vehicle.getMaxSpeed());
     }
 

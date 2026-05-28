@@ -119,15 +119,22 @@ public final class TrafficRuleEvaluator {
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
         Vector2D pos  = self.getEffectivePosition();
 
-        return world.getVehicles().stream()
-                .filter(v -> v != self)
-                .filter(v -> isAheadInSameLane(self, v))
-                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
+        return findFrontVehicle(self, world)
                 .map(front -> {
                     double centerDist = front.getEffectivePosition().distanceTo(pos);
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
+    }
+
+    public Optional<Vehicle> findFrontVehicle(Vehicle self, SimulationWorld world) {
+        Vector2D pos  = self.getEffectivePosition();
+
+        return world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> !v.isFinished() && !v.isCrashed())
+                .filter(v -> isAheadInSameLane(self, v))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)));
     }
 
     /**
@@ -183,6 +190,69 @@ public final class TrafficRuleEvaluator {
                 });
     }
 
+    public boolean hasSlowFrontVehicle(Vehicle self, SimulationWorld world) {
+        double gap = gapToFrontVehicle(self, world);
+        if (gap < 0 || gap > Math.max(120.0, self.getLength() * 3.0)) return false;
+
+        return findFrontVehicle(self, world)
+                .map(front -> front.getSpeed() < self.getMaxSpeed() * 0.65)
+                .orElse(false);
+    }
+
+    public boolean canOvertakeLeft(Vehicle self, SimulationWorld world) {
+        return isLateralPathClear(self, world, -50.0);
+    }
+
+    public boolean canOvertakeRight(Vehicle self, SimulationWorld world) {
+        return isLateralPathClear(self, world, 50.0);
+    }
+
+    public boolean canYieldRight(Vehicle self, SimulationWorld world) {
+        return isLateralPathClear(self, world, 50.0);
+    }
+
+    public boolean canYieldLeft(Vehicle self, SimulationWorld world) {
+        return isLateralPathClear(self, world, -50.0);
+    }
+
+    public boolean isLateralPathClear(Vehicle self, SimulationWorld world, double targetOffset) {
+        double currentOffset = self.getLateralOffset();
+        double midOffset = (currentOffset + targetOffset) / 2.0;
+        return isProjectedVehicleClear(self, world, midOffset)
+                && isProjectedVehicleClear(self, world, targetOffset);
+    }
+
+    private boolean isProjectedVehicleClear(Vehicle self, SimulationWorld world, double lateralOffset) {
+        Area sideArea = getBoundingBox(self, centerAtLateralOffset(self, lateralOffset));
+        Vector2D forward = movementDirection(self);
+        Area forwardSideArea = getBoundingBox(
+                self,
+                centerAtLateralOffset(self, lateralOffset)
+                        .add(forward.multiply(self.getLength() * 0.75)));
+
+        for (Vehicle other : world.getVehicles()) {
+            if (other == self || other.isFinished() || other.isCrashed()) continue;
+
+            Area otherArea = getBoundingBox(other);
+            Area overlap = new Area(sideArea);
+            overlap.intersect(otherArea);
+            if (!overlap.isEmpty()) return false;
+
+            Area forwardOverlap = new Area(forwardSideArea);
+            forwardOverlap.intersect(otherArea);
+            if (!forwardOverlap.isEmpty()) return false;
+        }
+
+        return true;
+    }
+
+    private Vector2D centerAtLateralOffset(Vehicle vehicle, double lateralOffset) {
+        Vector2D rightVector = new Vector2D(
+                Math.cos(vehicle.getRotation() + Math.PI / 2.0),
+                Math.sin(vehicle.getRotation() + Math.PI / 2.0));
+        return vehicle.getPosition().add(rightVector.multiply(lateralOffset));
+    }
+
     /**
      * Tìm xe ưu tiên gần nhất đang hoạt động.
      */
@@ -211,12 +281,15 @@ public final class TrafficRuleEvaluator {
     }
 
     private Area getBoundingBox(Vehicle v) {
+        return getBoundingBox(v, v.getEffectivePosition());
+    }
+
+    private Area getBoundingBox(Vehicle v, Vector2D center) {
         // Tạo hình chữ nhật với tâm ở (0, 0)
         Rectangle2D.Double rect = new Rectangle2D.Double(
                 -v.getLength() / 2, -v.getWidth() / 2, v.getLength(), v.getWidth());
         // Tịnh tiến và xoay
         AffineTransform transform = new AffineTransform();
-        Vector2D center = v.getEffectivePosition();
         transform.translate(center.x, center.y);
         transform.rotate(v.getRotation());
         return new Area(new Path2D.Double(rect, transform));

@@ -5,7 +5,6 @@ import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
-import util.Vector2D;
 import java.util.Optional;
 
 /**
@@ -45,9 +44,15 @@ public class AggressiveDriver implements DriverBehavior {
                 String myLaneType = myPathId.replaceAll("[0-9]", "");
                 String theirLaneType = theirPathId.replaceAll("[0-9]", "");
 
-                // Same lane → move out
+                // Same lane -> move beside the lane if a side corridor is clear.
                 if (myLaneType.equals(theirLaneType)) {
-                    return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.3);
+                    if (RULES.canYieldRight(vehicle, world)) {
+                        return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * 0.35);
+                    }
+                    if (RULES.canYieldLeft(vehicle, world)) {
+                        return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.35);
+                    }
+                    return DrivingDecision.stop();
                 }
 
                 // Different lane → stop if in range and not already moving out
@@ -64,7 +69,17 @@ public class AggressiveDriver implements DriverBehavior {
             return DrivingDecision.stop();
         }
 
-        // ── 3. Khoảng cách bám sát ──────────────────────────────────
+        // ── 3. Vượt xe chậm nếu có khoảng trống bên cạnh làn ────────
+        if (RULES.hasSlowFrontVehicle(vehicle, world)) {
+            if (RULES.canOvertakeLeft(vehicle, world)) {
+                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * SPEED_FACTOR);
+            }
+            if (RULES.canOvertakeRight(vehicle, world)) {
+                return DrivingDecision.changeLaneRight(vehicle.getMaxSpeed() * SPEED_FACTOR);
+            }
+        }
+
+        // ── 4. Khoảng cách bám sát ──────────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;
 
@@ -73,7 +88,7 @@ public class AggressiveDriver implements DriverBehavior {
             return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.4);
         }
 
-        // ── 4. Phóng nhanh hơn giới hạn ─────────────────────────────
+        // ── 5. Phóng nhanh hơn giới hạn ─────────────────────────────
         return DrivingDecision.accelerate(vehicle.getMaxSpeed() * SPEED_FACTOR);
     }
 

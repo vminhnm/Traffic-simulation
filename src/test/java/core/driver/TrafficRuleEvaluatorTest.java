@@ -145,4 +145,47 @@ public class TrafficRuleEvaluatorTest {
 
         assertEquals(-1.0, gap, 1e-9, "Opposite traffic in the neighboring lane must not be treated as a front vehicle.");
     }
+
+    @Test
+    void slowFrontVehicleCanBeOvertakenWhenSidePathIsClear() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
+        Car slowFront = new Car("front", createPathAt(60, 0), new NormalDriver());
+        world.addVehicle(self);
+        world.addVehicle(slowFront);
+
+        assertTrue(evaluator.hasSlowFrontVehicle(self, world));
+        assertTrue(evaluator.canOvertakeLeft(self, world));
+    }
+
+    @Test
+    void overtakeIsBlockedWhenSidePathWouldCollide() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
+        Car slowFront = new Car("front", createPathAt(60, 0), new NormalDriver());
+        Car sideBlocker = new Car("blocker", createPathAt(0, -50), new NormalDriver());
+        world.addVehicle(self);
+        world.addVehicle(slowFront);
+        world.addVehicle(sideBlocker);
+
+        assertTrue(evaluator.hasSlowFrontVehicle(self, world));
+        assertFalse(evaluator.canOvertakeLeft(self, world));
+    }
+
+    @Test
+    void overtakeCanUseRightSideWhenLeftSideIsBlocked() {
+        TrafficRuleEvaluator evaluator = new TrafficRuleEvaluator();
+        SimulationWorld world = new SimulationWorld();
+        Car self = new Car("self", createPathAt(0, 0), new NormalDriver());
+        Car slowFront = new Car("front", createPathAt(60, 0), new NormalDriver());
+        Car leftBlocker = new Car("left-blocker", createPathAt(0, -50), new NormalDriver());
+        world.addVehicle(self);
+        world.addVehicle(slowFront);
+        world.addVehicle(leftBlocker);
+
+        assertFalse(evaluator.canOvertakeLeft(self, world));
+        assertTrue(evaluator.canOvertakeRight(self, world));
+    }
 }

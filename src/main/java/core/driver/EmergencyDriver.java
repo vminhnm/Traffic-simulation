@@ -24,6 +24,7 @@ public class EmergencyDriver implements DriverBehavior {
     private static final double               SPEED_FACTOR  = 1.4;
     /** Khoảng cách tối thiểu (px) trước khi bắt đầu giảm tốc nhẹ. */
     private static final double               CRITICAL_GAP  = 20.0;
+    private static final double               BLOCKED_GAP   = 70.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
@@ -47,9 +48,10 @@ public class EmergencyDriver implements DriverBehavior {
         // Kiểm tra khoảng trống vật lý phía trước (xe thường chưa kịp tránh)
         double gap = RULES.gapToFrontVehicle(vehicle, world);
 
-        if (gap >= 0 && gap < CRITICAL_GAP) {
-            // Giảm tốc vừa phải để chờ xe thường nhường đường
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
+        if (gap >= 0 && gap < BLOCKED_GAP) {
+            // Giảm tốc để không đâm xe thường nếu nó không còn khoảng trống để né.
+            double targetFactor = gap < CRITICAL_GAP ? 0.25 : 0.5;
+            return DrivingDecision.brake(vehicle.getMaxSpeed() * targetFactor);
         }
 
         return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * SPEED_FACTOR);
