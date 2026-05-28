@@ -49,10 +49,10 @@ public class Car extends Vehicle {
                 .spriteKey(RenderAssetKey.CAR_EAST)
                 .defaultMaxSpeed(90)        // px/s
                 .defaultAcceleration(45)    // px/s²
-                .defaultLength(36)
+                .defaultLength(36)          // px
                 .defaultWidth(18)
                 .defaultRenderLength(48)
-                .defaultRenderWidth(48)
+                .defaultRenderWidth(48)           // px
                 .engineSound(SoundType.ENGINE_CAR)
                 .hornSound(SoundType.HORN_SHORT)
                 .build();

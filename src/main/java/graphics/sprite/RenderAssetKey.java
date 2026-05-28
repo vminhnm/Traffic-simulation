@@ -30,5 +30,8 @@ public enum RenderAssetKey {
     TRUCK_SOUTH, TRUCK_SOUTHEAST, TRUCK_SOUTHWEST, TRUCK_WEST,
 
     // ── Đèn giao thông ────────────────────────────────────────────
-    TRAFFIC_LIGHT_RED, TRAFFIC_LIGHT_GREEN, TRAFFIC_LIGHT_YELLOW
+    TRAFFIC_LIGHT_RED, TRAFFIC_LIGHT_GREEN, TRAFFIC_LIGHT_YELLOW,
+
+    // ── Hiệu ứng ──────────────────────────────────────────────────
+    EXPLOSION
 }

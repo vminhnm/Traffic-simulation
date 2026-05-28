@@ -150,35 +150,14 @@ public abstract class Vehicle implements Movable {
      * EmergencyDriver bỏ qua giới hạn tốc độ).
      */
     private double stoppedTimer = 0;
-    private static final double HORN_DELAY     = 5.0; // giây dừng trước khi bấm còi
-    /** Thời gian dừng tối đa trước khi tự động nhích để phá deadlock (giây). */
-    private static final double DEADLOCK_TIMEOUT = 3.0;
-    /** Cờ đánh dấu xe đang ở chế độ "phá deadlock" — nhích từ từ về phía trước. */
-    private boolean deadlockEscape = false;
-
+    private static final double HORN_DELAY = 5.0; // giây dừng trước khi bấm còi
     protected void applyDecision(DrivingDecision decision, double deltaTime) {
         stopped  = false;
         yielding = false;
 
-        // ── Kiểm tra deadlock timeout ────────────────────────────────
-        // Nếu xe nhận lệnh STOP quá lâu mà không phải do đèn đỏ,
-        // kích hoạt chế độ thoát deadlock: nhích chậm về phía trước.
-        if (decision.getAction() == core.driver.DrivingAction.STOP && deadlockEscape) {
-            // Đang thoát deadlock: tăng tốc chậm, bỏ qua lệnh STOP này
-            currentSpeed = Math.min(currentSpeed + acceleration * 0.5 * deltaTime, maxSpeed * 0.3);
-            stopped = false;
-            // Kết thúc chế độ escape sau khi xe đã di chuyển đủ xa
-            if (currentSpeed > maxSpeed * 0.2) {
-                deadlockEscape = false;
-                stoppedTimer   = 0;
-            }
-            return;
-        }
-
         switch (decision.getAction()) {
             case ACCELERATE, EMERGENCY_PASS -> {
-                stoppedTimer   = 0;
-                deadlockEscape = false;
+                stoppedTimer = 0; // reset
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.min(currentSpeed + acceleration * deltaTime, target);
                 currentSpeed = Math.min(currentSpeed, maxSpeed * speedMultiplier());
@@ -188,8 +167,7 @@ public abstract class Vehicle implements Movable {
                 else if (lateralOffset < 0) lateralOffset = Math.min(0, lateralOffset + 15 * deltaTime);
             }
             case BRAKE -> {
-                stoppedTimer   = 0;
-                deadlockEscape = false;
+                stoppedTimer = 0;
                 double target = decision.getTargetSpeed();
                 currentSpeed = Math.max(currentSpeed - acceleration * 2 * deltaTime, target);
             }
@@ -200,12 +178,6 @@ public abstract class Vehicle implements Movable {
                 if (stoppedTimer >= HORN_DELAY) {
                     sound.SoundManager.play(sound.SoundType.HORN_SHORT);
                     stoppedTimer = -999; // reset để không phát liên tục
-                }
-                // Phá deadlock: nếu dừng quá DEADLOCK_TIMEOUT giây → nhích thoát
-                if (stoppedTimer >= DEADLOCK_TIMEOUT && stoppedTimer < HORN_DELAY) {
-                    deadlockEscape = true;
-                    stopped        = false;
-                    currentSpeed   = maxSpeed * 0.1; // nhích chậm
                 }
             }
             case YIELD -> {
@@ -317,10 +289,7 @@ public abstract class Vehicle implements Movable {
      * đều chạy trên {@link RenderableState}, không trực tiếp trên Vehicle.
      */
     public RenderableState toRenderableState() {
-        // Tính toán tọa độ vẽ có áp dụng độ dạt ngang (lateralOffset)
-        // Dùng vector vuông góc với hướng di chuyển hiện tại
-        Vector2D rightVector = new Vector2D(Math.cos(rotation + Math.PI/2), Math.sin(rotation + Math.PI/2));
-        Vector2D renderPos = position.add(rightVector.multiply(lateralOffset));
+        Vector2D renderPos = getEffectivePosition();
 
         return RenderableState.builder(id)
                 .position(renderPos)
@@ -357,11 +326,16 @@ public abstract class Vehicle implements Movable {
 
     public String         getId()             { return id;             }
     public Vector2D       getPosition()       { return position;       }
+    public Vector2D       getEffectivePosition() {
+        Vector2D rightVector = new Vector2D(Math.cos(rotation + Math.PI/2), Math.sin(rotation + Math.PI/2));
+        return position.add(rightVector.multiply(lateralOffset));
+    }
     public double         getRotation()       { return rotation;       }
     public double         getLength()         { return length;         }
     public double         getWidth()          { return width;          }
     public VehiclePath    getPath()           { return path;           }
     public int            getWaypointIndex()  { return waypointIndex;  }
+    public double         getAcceleration()   { return acceleration;   }
     public boolean        isFinished()        { return finished;       }
     public boolean        isStopped()         { return stopped;        }
     public boolean        isYielding()        { return yielding;       }
@@ -376,6 +350,24 @@ public abstract class Vehicle implements Movable {
     public VehicleProfile getProfile()        { return profile;        }
     public DriverBehavior getDriverBehavior() { return driverBehavior; }
     public double         getLateralOffset()  { return lateralOffset;  }
+
+    /**
+     * Xe có đang ở trong vùng giao lộ không?
+     * Điều kiện: đã vượt qua stopIndex và chưa đến waypoint cuối.
+     */
+    public boolean isInIntersection() {
+        return waypointIndex > path.getStopIndex() && !finished;
+    }
+
+    /**
+     * Xe có đang tiếp cận giao lộ (sắp vào) không?
+     * Dùng để biết xe cần chuẩn bị nhường đường bên trong.
+     * @param lookAheadDist khoảng cách tính trước (px)
+     */
+    public boolean isApproachingIntersection(double lookAheadDist) {
+        double dist = core.rule.TrafficRuleEvaluator.staticDistanceToStopLine(this);
+        return dist >= 0 && dist <= lookAheadDist;
+    }
 
     @Override
     public String toString() {

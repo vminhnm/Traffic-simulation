@@ -80,6 +80,9 @@ public class SpriteLoader {
     PATHS.put(RenderAssetKey.TRUCK_SOUTHEAST,     "/assets/sprites/truck_SOUTHEAST.png");
     PATHS.put(RenderAssetKey.TRUCK_SOUTHWEST,     "/assets/sprites/truck_SOUTHWEST.png");
     PATHS.put(RenderAssetKey.TRUCK_WEST,          "/assets/sprites/truck_WEST.png");
+
+    // ── Hiệu ứng ──────────────────────────────────────────────────
+    PATHS.put(RenderAssetKey.EXPLOSION,            "/assets/sprites/explosion.png");
 }
     // Không cho tạo instance
     private SpriteLoader() {}

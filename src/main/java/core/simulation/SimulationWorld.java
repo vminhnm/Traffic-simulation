@@ -20,6 +20,8 @@ public class SimulationWorld {
 
     private List<Vehicle>                   vehicles = new ArrayList<>();
     private final Map<String, TrafficLight> lightMap = new HashMap<>();
+    /** Danh sách tâm các giao lộ — set từ UI khi khởi tạo scene. */
+    private final java.util.List<util.Vector2D> intersectionCenters = new java.util.ArrayList<>();
 
     // ── Phương tiện ─────────────────────────────────────────────────
 
@@ -30,6 +32,18 @@ public class SimulationWorld {
     public void setVehicles(List<Vehicle> v) { this.vehicles = new ArrayList<>(v); }
     public void addVehicle(Vehicle v)        { vehicles.add(v);    }
     public void removeVehicle(Vehicle v)     { vehicles.remove(v); }
+
+    // ── Giao lộ ─────────────────────────────────────────────────────
+
+    public void addIntersectionCenter(util.Vector2D center) {
+        intersectionCenters.add(center);
+    }
+    public void clearIntersectionCenters() {
+        intersectionCenters.clear();
+    }
+    public java.util.List<util.Vector2D> getIntersectionCenters() {
+        return java.util.Collections.unmodifiableList(intersectionCenters);
+    }
 
     // ── Đèn giao thông ──────────────────────────────────────────────
 

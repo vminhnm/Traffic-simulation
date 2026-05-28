@@ -39,12 +39,12 @@ public final class VehicleProfile {
     private final double defaultMaxSpeed;
     /** Gia tốc (px/s²). */
     private final double defaultAcceleration;
-    /** Kích thước va chạm: chiều dài xe (px). */
+    /** Chiều dài xe (px). */
     private final double defaultLength;
-    /** Kích thước va chạm: chiều rộng xe (px). */
-    private final double defaultWidth;
     /** Kích thước hiển thị: chiều dài xe (px). */
     private final double defaultRenderLength;
+    /** Chiều rộng xe (px). */
+    private final double defaultWidth;
     /** Kích thước hiển thị: chiều rộng xe (px). */
     private final double defaultRenderWidth;
 
@@ -69,7 +69,7 @@ public final class VehicleProfile {
         this.defaultLength       = b.defaultLength;
         this.defaultWidth        = b.defaultWidth;
         this.defaultRenderLength = b.defaultRenderLength < 0 ? b.defaultLength : b.defaultRenderLength;
-        this.defaultRenderWidth  = b.defaultRenderWidth < 0 ? b.defaultWidth : b.defaultRenderWidth;
+        this.defaultRenderWidth  = b.defaultRenderWidth  < 0 ? b.defaultWidth  : b.defaultRenderWidth;
         this.engineSound         = b.engineSound;
         this.hornSound           = b.hornSound;
         this.sirenSound          = b.sirenSound;

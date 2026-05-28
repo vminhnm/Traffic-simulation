@@ -43,12 +43,9 @@ public class NormalDriver implements DriverBehavior {
                 }
 
                 // Different lane → stop if in range and not already moving out
-                // Different lane → stop only if on a DIFFERENT axis (e.g. NS vs EW)
-                if (isDifferentAxis(vehicle.getRotation(), pv.getRotation())) {
-                    double dist = vehicle.getPosition().distanceTo(pv.getPosition());
-                    if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
-                        return DrivingDecision.stop();
-                    }
+                double dist = vehicle.getPosition().distanceTo(pv.getPosition());
+                if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
+                    return DrivingDecision.stop();
                 }
             }
         }
@@ -58,12 +55,31 @@ public class NormalDriver implements DriverBehavior {
             return DrivingDecision.stop();
         }
 
+        // ── 2b. Kiểm tra xung đột trong giao lộ (xe rẽ chéo) ────────
+        {
+            var conflict = RULES.getIntersectionConflictLevel(vehicle, world);
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.STOP) {
+                return DrivingDecision.stop();
+            }
+            if (conflict == core.rule.TrafficRuleEvaluator.ConflictLevel.YIELD) {
+                // Đang trong hộp, có xe khác cũng trong hộp nhưng mình có ưu tiên → chạy chậm vừa
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.55);
+            }
+        }
+
         // ── 3. Giữ khoảng cách xe trước ────────────────────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
-        double safeDistance = vehicle.getLength() * 1.5 + 15;
+        
+        double speed = vehicle.getSpeed();
+        double brakingDistance = (speed * speed) / (vehicle.getAcceleration() * 2);
+        double safeDistance = vehicle.getLength() * 2.0 + 20 + brakingDistance;
 
         if (gap >= 0 && gap < safeDistance) {
             // Giảm tốc tỉ lệ: càng gần càng chậm
+            if (gap < vehicle.getLength() * 0.8) {
+                return DrivingDecision.stop();
+            }
+            
             double ratio      = Math.max(0, gap / safeDistance);
             double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.6;
             return DrivingDecision.brake(targetSpeed);
@@ -75,21 +91,4 @@ public class NormalDriver implements DriverBehavior {
 
     @Override
     public String getStyleName() { return "Normal"; }
-
-        /**
-     * Returns true if the two rotations are on different axes
-     * (one is roughly N-S, the other roughly E-W).
-     * Same axis (NS vs NS, or EW vs EW) returns false — no need to stop.
-     */
-    private static boolean isDifferentAxis(double rotA, double rotB) {
-        // Normalise to 0–180° (collapse opposite directions onto same axis)
-        double a = Math.toDegrees(rotA) % 180;
-        double b = Math.toDegrees(rotB) % 180;
-        if (a < 0) a += 180;
-        if (b < 0) b += 180;
-        // NS ≈ 90°, EW ≈ 0° or 180°. Axes differ when angular distance > 45°.
-        double diff = Math.abs(a - b);
-        if (diff > 90) diff = 180 - diff;
-        return diff > 45;
-    }
 }

@@ -44,6 +44,7 @@ graphics\renderer\Renderer.class
 core\simulation\CollisionEvent.class
 ui\TrafficSimulationUI$SimpleTrafficLight.class
 core\driver\EmergencyDriver.class
+core\rule\TrafficRuleEvaluator$ConflictLevel.class
 graphics\sprite\RenderAssetKey.class
 core\vehicle\RenderableState$Builder.class
 core\simulation\SimulationEngine.class

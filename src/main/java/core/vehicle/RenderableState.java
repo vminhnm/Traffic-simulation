@@ -17,8 +17,8 @@ public final class RenderableState {
     private final String    id;
     private final Vector2D  position;      // tọa độ tâm xe (world space)
     private final double    rotation;      // góc xoay (radian)
-    private final double    length;        // render size (px) — dùng cho GRAPHICS
-    private final double    width;         // render size (px) — dùng cho GRAPHICS
+    private final double    length;        // chiều dài (px)
+    private final double    width;         // chiều rộng (px)
     private final double    physicalLength; // kích thước vật lý thực (px) — dùng cho BASIC
     private final double    physicalWidth;
     private final String    basicLabel;    // nhãn chế độ Basic ("Car", "Ambu"…)
@@ -57,8 +57,8 @@ public final class RenderableState {
     public String   getId()          { return id;          }
     public Vector2D getPosition()    { return position;    }
     public double   getRotation()    { return rotation;    }
-    public double   getLength()      { return length;         }
-    public double   getWidth()       { return width;          }
+    public double   getLength()      { return length;      }
+    public double   getWidth()       { return width;       }
     public double   getPhysicalLength() { return physicalLength; }
     public double   getPhysicalWidth()  { return physicalWidth;  }
     public String   getBasicLabel()  { return basicLabel;  }

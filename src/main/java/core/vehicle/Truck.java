@@ -34,10 +34,10 @@ public class Truck extends Vehicle {
                 .spriteKey(RenderAssetKey.TRUCK_EAST)
                 .defaultMaxSpeed(55)
                 .defaultAcceleration(15)        // gia tốc chậm
-                .defaultLength(72)              // dài nhất trong mô phỏng
+                .defaultLength(52)              // dài nhất trong mô phỏng
                 .defaultWidth(20)
-                .defaultRenderLength(57)
-                .defaultRenderWidth(57)
+                .defaultRenderLength(67)
+                .defaultRenderWidth(67)
                 .engineSound(SoundType.ENGINE_TRUCK)
                 .hornSound(SoundType.HORN_LONG)
                 .build();

@@ -30,12 +30,8 @@ public final class TrafficRuleEvaluator {
 
     /** Khoảng cách (px) từ xe đến stop-line để bắt đầu kiểm tra đèn. */
     private static final double LIGHT_CHECK_DISTANCE = 80.0;
-    /**
-     * Khoảng cách (px) để coi là "đã vào vạch dừng" — không còn quay lại được.
-     * Tăng lên 30px (từ 10px) để xe đã vào giao lộ không bị bắt dừng lại,
-     * tránh tình trạng xe bị chặn đứng giữa đường gây va chạm với xe luồng khác.
-     */
-    private static final double COMMITTED_DISTANCE   = 30.0;
+    /** Khoảng cách (px) để coi là "đã vào vạch dừng" — không còn quay lại được. */
+    private static final double COMMITTED_DISTANCE   = 10.0;
 
     // ─────────────────────────────────────────────────────────────────
     //  Đèn giao thông
@@ -49,7 +45,7 @@ public final class TrafficRuleEvaluator {
         if (color == LightColor.GREEN) return false;
 
         double distToStop = distanceToStopLine(vehicle);
-        // Nếu đã vượt qua vạch dừng → không dừng lại nữa (đã committed)
+        // Nếu đã vượt qua vạch dừng → không dừng lại nữa
         if (distToStop < -COMMITTED_DISTANCE) return false;
         // Nếu còn xa thì chưa cần lo
         if (distToStop > LIGHT_CHECK_DISTANCE) return false;
@@ -96,9 +92,11 @@ public final class TrafficRuleEvaluator {
 
         // Tính khoảng cách dọc theo path từ xe đến stop-line
         if (curIdx == stopIdx) {
+            // Đang tiến thẳng đến stop waypoint
             return vehiclePos.distanceTo(stopPos) - vehicle.getLength() / 2.0;
         }
 
+        // Cần cộng các đoạn đường còn lại trước khi đến stop
         double remaining = vehiclePos.distanceTo(path.getWaypoints().get(curIdx));
         for (int i = curIdx; i < stopIdx; i++) {
             remaining += path.getWaypoints().get(i)
@@ -112,113 +110,69 @@ public final class TrafficRuleEvaluator {
     // ─────────────────────────────────────────────────────────────────
 
     /**
-     * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước.
-     *
-     * <p><b>Nguyên tắc cross-path:</b><br>
-     * Xe từ luồng khác chỉ bị tính là vật cản khi:</p>
-     * <ol>
-     *   <li>Nó đang đứng chờ đèn (isStopped) — nghĩa là đang ở phía trước vạch dừng,
-     *       nên xe hiện tại cũng phải dừng xếp hàng.</li>
-     *   <li>HOẶC xe hiện tại chưa vào giao lộ (chưa qua stopIndex) — cần phát hiện
-     *       xe đang băng ngang trước mặt để tránh đâm.</li>
-     * </ol>
-     * Khi xe hiện tại đã vào giao lộ (đã qua stopIndex), nó KHÔNG dừng lại vì
-     * xe luồng khác — điều đó sẽ gây kẹt giữa giao lộ và tạo deadlock.
-     *
-     * <p><b>Chống deadlock:</b> Nếu 2 xe cùng mutual-blocking, xe ID nhỏ hơn được đi trước.</p>
+     * Khoảng cách (px) từ đầu xe hiện tại đến đuôi xe gần nhất phía trước
+     * trên cùng làn/hướng đi. Xe có thể khác route khi chuẩn bị rẽ, nên
+     * không chỉ so path id.
      *
      * @return khoảng cách dương nếu có xe trước; -1 nếu đường trống.
      */
     public double gapToFrontVehicle(Vehicle self, SimulationWorld world) {
-        String pathId = self.getPath().getId();
-        Vector2D pos  = self.getPosition();
+        Vector2D pos  = self.getEffectivePosition();
 
-        // ── 1. Xe cùng path ──────────────────────────────────────────
-        double samePath = world.getVehicles().stream()
+        return world.getVehicles().stream()
                 .filter(v -> v != self)
-                .filter(v -> v.getPath().getId().equals(pathId))
-                .filter(v -> v.getWaypointIndex() >= self.getWaypointIndex())
-                .filter(v -> isAheadOnPath(self, v))
-                .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
+                .filter(v -> isAheadInSameLane(self, v))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)))
                 .map(front -> {
-                    double centerDist = front.getPosition().distanceTo(pos);
+                    double centerDist = front.getEffectivePosition().distanceTo(pos);
                     return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
                 })
                 .orElse(-1.0);
-
-        // ── 2. Xe khác path (cross-path) ─────────────────────────────
-        // Xe hiện tại đã vào giao lộ (qua stopIndex) → chỉ quan tâm cùng path,
-        // không dừng vì xe luồng khác (tránh kẹt giữa giao lộ).
-        boolean selfInsideIntersection = self.getWaypointIndex() > self.getPath().getStopIndex();
-
-        final double CROSS_CHECK_RADIUS = 100.0; // tăng từ 80 lên 100px để phát hiện sớm hơn
-        double crossPath = -1.0;
-
-        if (!selfInsideIntersection) {
-            // Xe chưa vào giao lộ: phát hiện xe đang băng ngang phía trước
-            crossPath = world.getVehicles().stream()
-                    .filter(v -> v != self)
-                    .filter(v -> !v.getPath().getId().equals(pathId))
-                    .filter(v -> isAheadOnPath(self, v))
-                    // Chỉ tính xe đang dừng chờ đèn HOẶC đang trong giao lộ (băng ngang)
-                    .filter(v -> v.isStopped() || v.getWaypointIndex() > v.getPath().getStopIndex())
-                    // Loại trừ mutual blocking deadlock
-                    .filter(v -> !isMutuallyBlocking(self, v, world))
-                    .filter(v -> v.getPosition().distanceTo(pos) < CROSS_CHECK_RADIUS)
-                    .min(Comparator.comparingDouble(v -> v.getPosition().distanceTo(pos)))
-                    .map(front -> {
-                        double centerDist = front.getPosition().distanceTo(pos);
-                        return centerDist - front.getLength() / 2.0 - self.getLength() / 2.0;
-                    })
-                    .orElse(-1.0);
-        }
-
-        if (samePath < 0) return crossPath;
-        if (crossPath < 0) return samePath;
-        return Math.min(samePath, crossPath);
     }
 
     /**
-     * Kiểm tra 2 xe có đang mutual-blocking (deadlock chéo) không.
-     * Xe ID nhỏ hơn được ưu tiên đi → xe ID lớn hơn trả về true (nhường đường).
+     * {@code other} có ở phía trước {@code self} trong cùng làn không?
      */
-    private boolean isMutuallyBlocking(Vehicle self, Vehicle other, SimulationWorld world) {
-        final double DEADLOCK_RADIUS = 80.0;
-        double dist = self.getPosition().distanceTo(other.getPosition());
-        if (dist >= DEADLOCK_RADIUS) return false;
+    private boolean isAheadInSameLane(Vehicle self, Vehicle other) {
+        Vector2D dir = movementDirection(self);
+        if (dir.length() < 1e-9) return false;
 
-        boolean otherAlsoBlockedBySelf = isAheadOnPath(other, self);
-        if (!otherAlsoBlockedBySelf) return false;
+        Vector2D toOther = other.getEffectivePosition().subtract(self.getEffectivePosition());
+        double forwardDistance = dir.dot(toOther);
+        if (forwardDistance <= 0) return false;
 
-        // self.id nhỏ hơn → self được đi → loại bỏ other khỏi danh sách cản
-        int cmp = self.getId().compareTo(other.getId());
-        return cmp < 0;
+        Vector2D otherDir = movementDirection(other);
+        if (otherDir.length() >= 1e-9 && dir.dot(otherDir) < 0.5) return false;
+
+        Vector2D lateral = toOther.subtract(dir.multiply(forwardDistance));
+        double sameLaneThreshold = (self.getWidth() + other.getWidth()) / 2.0 + 4.0;
+        return lateral.length() <= sameLaneThreshold;
     }
 
-    /**
-     * {@code other} có ở phía trước {@code self} theo hướng di chuyển không?
-     */
-    private boolean isAheadOnPath(Vehicle self, Vehicle other) {
-        Vector2D dir = self.getVelocity();
-        if (dir.length() < 1e-9) {
-            int nextIdx = self.getWaypointIndex();
-            if (nextIdx < self.getPath().getWaypoints().size()) {
-                dir = self.getPath().getWaypoints().get(nextIdx)
-                         .subtract(self.getPosition());
-            } else {
-                return false;
-            }
+    private Vector2D movementDirection(Vehicle vehicle) {
+        Vector2D dir = vehicle.getVelocity();
+        if (dir.length() >= 1e-9) return dir.normalize();
+
+        int nextIdx = vehicle.getWaypointIndex();
+        if (nextIdx < vehicle.getPath().getWaypoints().size()) {
+            return vehicle.getPath().getWaypoints().get(nextIdx)
+                    .subtract(vehicle.getPosition())
+                    .normalize();
         }
-        Vector2D toOther = other.getPosition().subtract(self.getPosition());
-        return dir.normalize().dot(toOther.normalize()) > 0.5;
+        return Vector2D.ZERO;
     }
 
     // ─────────────────────────────────────────────────────────────────
     //  Xe ưu tiên
     // ─────────────────────────────────────────────────────────────────
 
+    /**
+     * Xe hiện tại có phải nhường đường cho xe ưu tiên nào đó không?
+     * Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
+     * và đang tiến gần xe hiện tại.
+     */
     public boolean shouldYieldToPriorityVehicle(Vehicle self, SimulationWorld world) {
-        if (self.isPriorityVehicle()) return false;
+        if (self.isPriorityVehicle()) return false;   // xe ưu tiên không nhường nhau
 
         return world.getVehicles().stream()
                 .filter(v -> v instanceof PriorityVehicle pv && pv.isSirenActive())
@@ -229,6 +183,9 @@ public final class TrafficRuleEvaluator {
                 });
     }
 
+    /**
+     * Tìm xe ưu tiên gần nhất đang hoạt động.
+     */
     public Optional<PriorityVehicle> nearestActivePriorityVehicle(
             Vehicle self, SimulationWorld world) {
         return world.getVehicles().stream()
@@ -242,18 +199,190 @@ public final class TrafficRuleEvaluator {
     //  Va chạm (Collision)
     // ─────────────────────────────────────────────────────────────────
 
+    // ─────────────────────────────────────────────────────────────────
+    //  Xung đột tại giao lộ
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Phiên bản static của distanceToStopLine — dùng khi không có world.
+     */
+    public static double staticDistanceToStopLine(core.vehicle.Vehicle vehicle) {
+        core.road.VehiclePath path = vehicle.getPath();
+        int stopIdx = path.getStopIndex();
+        int curIdx  = vehicle.getWaypointIndex();
+        if (curIdx > stopIdx) return -1;
+        util.Vector2D vehiclePos = vehicle.getPosition();
+        util.Vector2D stopPos    = path.getStopPosition();
+        if (curIdx == stopIdx) {
+            return vehiclePos.distanceTo(stopPos) - vehicle.getLength() / 2.0;
+        }
+        double remaining = vehiclePos.distanceTo(path.getWaypoints().get(curIdx));
+        for (int i = curIdx; i < stopIdx; i++) {
+            remaining += path.getWaypoints().get(i).distanceTo(path.getWaypoints().get(i + 1));
+        }
+        return remaining - vehicle.getLength() / 2.0;
+    }
+
+    /**
+     * Xe {@code self} có cần nhường đường vì xung đột tại giao lộ không?
+     *
+     * <p><b>Thuật toán — proximity-based, không dự đoán:</b>
+     * <ol>
+     *   <li>Tìm tâm giao lộ gần xe nhất (từ world).</li>
+     *   <li>Nếu cả xe mình lẫn xe kia đều trong vùng nguy hiểm quanh tâm đó,
+     *       VÀ entry arm khác nhau (khác chiều vào),
+     *       VÀ khoảng cách thực tế đủ gần → trả về true.</li>
+     * </ol>
+     */
+    /**
+     * Mức độ xung đột tại giao lộ.
+     * NONE    — không có xung đột, đi bình thường.
+     * YIELD   — đang trong hộp, xe kia cũng trong hộp nhưng mình có ưu tiên (đi thẳng) → chậm lại một chút.
+     * STOP    — phải dừng hẳn: (a) mình chưa vào và có xe đang trong hộp, hoặc
+     *                           (b) mình đang rẽ và có xe đi thẳng cùng thời điểm.
+     */
+    public enum ConflictLevel { NONE, YIELD, STOP }
+
+    /**
+     * Trả về mức độ xung đột tại giao lộ gần nhất.
+     *
+     * <h3>Quy tắc ưu tiên</h3>
+     * <ul>
+     *   <li>Xe đi thẳng có quyền ưu tiên hơn xe rẽ.</li>
+     *   <li>Xe đang trong hộp có quyền ưu tiên hơn xe đang tiếp cận.</li>
+     *   <li>Nếu cả hai đều trong hộp: xe rẽ phải nhường xe thẳng.</li>
+     * </ul>
+     */
+    public ConflictLevel getIntersectionConflictLevel(core.vehicle.Vehicle self, SimulationWorld world) {
+        java.util.List<util.Vector2D> centers = world.getIntersectionCenters();
+        if (centers.isEmpty()) return ConflictLevel.NONE;
+
+        final double BOX_R      = 62.0;  // px — bên trong hộp giao lộ (ROAD_HALF=50, diagonal~71)
+        final double APPROACH_R = 85.0;  // px — vùng tiếp cận trước vạch dừng
+
+        util.Vector2D myPos = self.getEffectivePosition();
+        util.Vector2D nearest = centers.stream()
+                .min(java.util.Comparator.comparingDouble(c -> myPos.distanceTo(c)))
+                .orElse(null);
+        if (nearest == null) return ConflictLevel.NONE;
+
+        double myDist = myPos.distanceTo(nearest);
+        if (myDist > APPROACH_R) return ConflictLevel.NONE;
+
+        // Xe đã vượt qua hộp giao lộ và đang ra ngoài (exiting) → không còn trong vùng conflict
+        // isInIntersection=true nhưng myDist > BOX_R nghĩa là xe đã đi qua tâm, đang thoát ra
+        boolean iAmInside   = myDist <= BOX_R;
+        if (!iAmInside && self.isInIntersection()) return ConflictLevel.NONE;
+
+        boolean iAmStraight = isGoingStraight(self.getPath().getEntryArm(), self.getPath().getExitArm());
+        String  myEntry     = self.getPath().getEntryArm();
+
+        ConflictLevel worst = ConflictLevel.NONE;
+
+        for (core.vehicle.Vehicle other : world.getVehicles()) {
+            if (other == self)      continue;
+            if (other.isCrashed())  continue;
+            if (other.isFinished()) continue;
+
+            String theirEntry = other.getPath().getEntryArm();
+            if (theirEntry.equals(myEntry)) continue; // cùng arm → cùng làn, không cắt nhau
+
+            // Xe kia đang đèn đỏ/vàng và chưa vào hộp → đèn đã điều phối, bỏ qua
+            LightColor theirLight = getApproachingLightColor(other, world);
+            if (theirLight != LightColor.GREEN && !other.isInIntersection()) continue;
+
+            double  theirDist    = other.getEffectivePosition().distanceTo(nearest);
+            boolean theyInside   = theirDist <= BOX_R;
+
+            // Xe kia đã vượt qua hộp và đang thoát ra → không còn là mối đe dọa
+            if (!theyInside && other.isInIntersection()) continue;
+
+            boolean theyStraight = isGoingStraight(theirEntry, other.getPath().getExitArm());
+
+            // Hai xe đi thẳng ngược chiều (N↔S hoặc E↔W) — dùng làn riêng, không đâm nhau
+            if (isOpposite(myEntry, theirEntry) && iAmStraight && theyStraight) continue;
+
+            // ── Xe kia đang trong hộp giao lộ ──────────────────────────────────────
+            if (theyInside) {
+                if (iAmInside) {
+                    // Cả hai trong hộp cùng lúc:
+                    // Xe rẽ nhường xe thẳng; nếu cả hai đều rẽ → xe nào vào trước tiếp tục (YIELD)
+                    if (!iAmStraight && theyStraight) {
+                        // Tôi rẽ, họ thẳng → tôi phải STOP để tránh đâm
+                        return ConflictLevel.STOP;
+                    }
+                    // Tôi thẳng, họ rẽ → tôi có quyền ưu tiên → chỉ YIELD nhẹ đề phòng
+                    // Cả hai đều rẽ → YIELD nhẹ
+                    worst = ConflictLevel.YIELD;
+                } else {
+                    // Họ đang trong hộp, tôi đang tiếp cận → tôi phải STOP chờ
+                    return ConflictLevel.STOP;
+                }
+            } else {
+                // Xe kia đang tiếp cận (chưa vào hộp)
+                if (iAmInside) {
+                    // Tôi đang trong hộp, họ chưa vào → tôi có quyền ưu tiên, đi tiếp bình thường
+                    continue;
+                } else {
+                    // Cả hai đang tiếp cận — chỉ xe ĐANG RẼ mới nhường, xe thẳng có ưu tiên
+                    if (!iAmStraight) {
+                        // Tôi đang rẽ → nhường nếu xe kia (đi thẳng) gần hộp hơn hoặc xấp xỉ
+                        if (theyStraight && theirDist <= myDist + 20) {
+                            worst = ConflictLevel.STOP;
+                        }
+                        // Cả hai đều rẽ và khoảng cách xấp xỉ → YIELD nhẹ
+                        if (!theyStraight && Math.abs(theirDist - myDist) < 10) {
+                            if (worst == ConflictLevel.NONE) worst = ConflictLevel.YIELD;
+                        }
+                    }
+                    // Tôi đi thẳng → không nhường ai khi cả hai đang tiếp cận
+                }
+            }
+        }
+        return worst;
+    }
+
+    /** Wrapper backward-compat cho code cũ dùng boolean. */
+    public boolean hasIntersectionConflict(core.vehicle.Vehicle self, SimulationWorld world) {
+        return getIntersectionConflictLevel(self, world) != ConflictLevel.NONE;
+    }
+
+    /**
+     * Hai entry arm có đối diện nhau không? (N↔S, E↔W)
+     */
+    private boolean isOpposite(String a, String b) {
+        if (a.isEmpty() || b.isEmpty()) return false;
+        char ca = a.charAt(0), cb = b.charAt(0);
+        return (ca == 'N' && cb == 'S') || (ca == 'S' && cb == 'N')
+            || (ca == 'E' && cb == 'W') || (ca == 'W' && cb == 'E');
+    }
+
+    /**
+     * Xe có đi thẳng không? (entry và exit là hai arm đối diện)
+     */
+    private boolean isGoingStraight(String entry, String exit) {
+        return isOpposite(entry, exit);
+    }
+
+    /**
+     * Kiểm tra xem hai xe có đang va chạm vật lý không (có tính đến góc xoay).
+     */
     public boolean isColliding(Vehicle v1, Vehicle v2) {
         Area area1 = getBoundingBox(v1);
         Area area2 = getBoundingBox(v2);
+        
         area1.intersect(area2);
         return !area1.isEmpty();
     }
 
     private Area getBoundingBox(Vehicle v) {
+        // Tạo hình chữ nhật với tâm ở (0, 0)
         Rectangle2D.Double rect = new Rectangle2D.Double(
                 -v.getLength() / 2, -v.getWidth() / 2, v.getLength(), v.getWidth());
+        // Tịnh tiến và xoay
         AffineTransform transform = new AffineTransform();
-        transform.translate(v.getPosition().x, v.getPosition().y);
+        Vector2D center = v.getEffectivePosition();
+        transform.translate(center.x, center.y);
         transform.rotate(v.getRotation());
         return new Area(new Path2D.Double(rect, transform));
     }
