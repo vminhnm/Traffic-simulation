@@ -4,7 +4,6 @@ import core.rule.TrafficRuleEvaluator;
 import core.simulation.SimulationWorld;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
-import util.Vector2D;
 
 /**
  * <b>Lái xe bình thường</b> — tuân thủ đèn giao thông, giữ khoảng cách an toàn.
@@ -20,33 +19,23 @@ import util.Vector2D;
 public class NormalDriver implements DriverBehavior {
 
     private static final TrafficRuleEvaluator RULES = new TrafficRuleEvaluator();
-    private static final double SAFETY_STOP_RANGE = 200.0; // Range to stop other lanes
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        // ── 1. Nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ────────────────
+        // ── 1. Nhường xe ưu tiên: chỉ phanh/dừng tại chỗ, không chuyển làn ────
         if (RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
             var priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
             if (priorityVehicle.isPresent()) {
                 PriorityVehicle pv = priorityVehicle.get();
-                String myPathId = vehicle.getPath().getId();
-                String theirPathId = pv.getPath().getId();
+                double dist = pv.getPosition().distanceTo(vehicle.getPosition());
 
-                // Extract lane type (first 2-3 chars before numbers)
-                String myLaneType = myPathId.replaceAll("[0-9]", "");
-                String theirLaneType = theirPathId.replaceAll("[0-9]", "");
-
-                // Same lane → move out
-                if (myLaneType.equals(theirLaneType)) {
-                    return DrivingDecision.changeLaneLeft(0);
-                }
-
-                // Different lane → stop if in range and not already moving out
-                double dist = vehicle.getPosition().distanceTo(pv.getPosition());
-                if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
+                // Càng gần xe ưu tiên càng phanh gấp hơn
+                if (dist < vehicle.getLength() * 2.5) {
                     return DrivingDecision.stop();
                 }
+                // Giảm tốc mạnh để xe ưu tiên vượt qua
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.1);
             }
         }
 
@@ -67,7 +56,7 @@ public class NormalDriver implements DriverBehavior {
             }
         }
 
-        // ── 3. Giữ khoảng cách xe trước ────────────────────────────
+        // ── 3. Giữ khoảng cách xe trước — hoặc vượt nếu đủ điều kiện ─
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         
         double speed = vehicle.getSpeed();
@@ -75,6 +64,11 @@ public class NormalDriver implements DriverBehavior {
         double safeDistance = vehicle.getLength() * 2.0 + 20 + brakingDistance;
 
         if (gap >= 0 && gap < safeDistance) {
+            // Thử vượt nếu đủ điều kiện
+            if (RULES.canOvertake(vehicle, world)) {
+                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.9);
+            }
+
             // Giảm tốc tỉ lệ: càng gần càng chậm
             if (gap < vehicle.getLength() * 0.8) {
                 return DrivingDecision.stop();
@@ -83,6 +77,11 @@ public class NormalDriver implements DriverBehavior {
             double ratio      = Math.max(0, gap / safeDistance);
             double targetSpeed = vehicle.getMaxSpeed() * ratio * 0.6;
             return DrivingDecision.brake(targetSpeed);
+        }
+
+        // Nếu đang ở làn vượt (lateralOffset âm) nhưng không còn xe chậm trước → về tâm
+        if (vehicle.getLateralOffset() < -15 && gap < 0) {
+            return DrivingDecision.accelerate(vehicle.getMaxSpeed());
         }
 
         // ── 4. Chạy bình thường ─────────────────────────────────────

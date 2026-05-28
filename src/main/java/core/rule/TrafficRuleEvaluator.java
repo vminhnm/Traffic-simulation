@@ -163,13 +163,84 @@ public final class TrafficRuleEvaluator {
     }
 
     // ─────────────────────────────────────────────────────────────────
+    //  Vượt xe (Overtake)
+    // ─────────────────────────────────────────────────────────────────
+
+    /**
+     * Xe có thể vượt không?
+     * Điều kiện: (1) có xe phía trước chậm hơn ngưỡng, (2) đường bên trái trống,
+     * (3) xe chưa đang lệch (lateralOffset gần 0), (4) không đang trong giao lộ.
+     */
+    public boolean canOvertake(Vehicle self, SimulationWorld world) {
+        // Không vượt khi đang ở trong/gần giao lộ
+        if (self.isInIntersection()) return false;
+        if (distanceToStopLine(self) < 60) return false;
+
+        // Chỉ vượt khi lateralOffset gần tâm làn
+        if (Math.abs(self.getLateralOffset()) > 8) return false;
+
+        double gap = gapToFrontVehicle(self, world);
+        if (gap < 0) return false; // Không có xe trước → không cần vượt
+
+        // Tìm xe phía trước
+        Vector2D pos = self.getEffectivePosition();
+        var frontOpt = world.getVehicles().stream()
+                .filter(v -> v != self)
+                .filter(v -> isAheadInSameLane(self, v))
+                .min(Comparator.comparingDouble(v -> v.getEffectivePosition().distanceTo(pos)));
+        if (frontOpt.isEmpty()) return false;
+
+        Vehicle front = frontOpt.get();
+        // Chỉ vượt nếu xe trước đang chậm hơn đáng kể
+        double slowThreshold = self.getMaxSpeed() * 0.6;
+        if (front.getSpeed() >= slowThreshold) return false;
+
+        // Kiểm tra đường bên trái trống: tìm xe trong vùng bên trái
+        return isSideClear(self, world, -1);
+    }
+
+    /**
+     * Kiểm tra bên trái (side=-1) hoặc bên phải (side=+1) có trống không.
+     * Trả về true nếu không có xe nào trong vùng nguy hiểm khi chuyển làn.
+     */
+    public boolean isSideClear(Vehicle self, SimulationWorld world, int side) {
+        Vector2D dir   = movementDirection(self);
+        if (dir.length() < 1e-9) return false;
+
+        // Vector vuông góc sang bên (side=-1 là trái, +1 là phải)
+        Vector2D right  = new Vector2D(-dir.y, dir.x); // vector quay phải 90°
+        Vector2D lateral = right.multiply(side);        // side=-1 → trái
+
+        Vector2D myPos  = self.getEffectivePosition();
+        double   checkOffset = (self.getWidth() + 10) * 2.0;
+        double   checkLength = self.getLength() * 3.5;
+
+        for (Vehicle other : world.getVehicles()) {
+            if (other == self) continue;
+            if (other.isCrashed() || other.isFinished()) continue;
+
+            Vector2D toOther = other.getEffectivePosition().subtract(myPos);
+            double sideComp  = toOther.dot(lateral);
+            double fwdComp   = toOther.dot(dir);
+
+            // Xe kia phải ở về phía bên cần kiểm tra
+            if (sideComp < 5 || sideComp > checkOffset) continue;
+            // Trong khoảng dọc ±checkLength quanh xe mình
+            if (Math.abs(fwdComp) > checkLength) continue;
+
+            return false; // Có xe → không an toàn
+        }
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────
     //  Xe ưu tiên
     // ─────────────────────────────────────────────────────────────────
 
     /**
      * Xe hiện tại có phải nhường đường cho xe ưu tiên nào đó không?
-     * Điều kiện: có {@link PriorityVehicle} trong bán kính sirên của nó,
-     * và đang tiến gần xe hiện tại.
+     * Điều kiện: xe ưu tiên đang bật sirên VÀ xe hiện tại đang chắn đường
+     * (nằm trong cùng làn phía trước xe ưu tiên, trong bán kính sirên).
      */
     public boolean shouldYieldToPriorityVehicle(Vehicle self, SimulationWorld world) {
         if (self.isPriorityVehicle()) return false;   // xe ưu tiên không nhường nhau
@@ -179,8 +250,30 @@ public final class TrafficRuleEvaluator {
                 .map(v -> (PriorityVehicle) v)
                 .anyMatch(pv -> {
                     double dist = pv.getPosition().distanceTo(self.getPosition());
-                    return dist <= pv.getSirenRadius();
+                    if (dist > pv.getSirenRadius()) return false;
+                    // Chỉ nhường khi xe thường đang chắn đường xe ưu tiên
+                    return isBlockingPriorityVehicle(self, pv);
                 });
+    }
+
+    /**
+     * Kiểm tra xe {@code self} có đang chắn đường xe ưu tiên {@code pv} không.
+     * Điều kiện: {@code self} nằm phía trước {@code pv} theo hướng di chuyển
+     * của {@code pv}, và nằm trong phạm vi ngang của làn xe ưu tiên.
+     */
+    private boolean isBlockingPriorityVehicle(Vehicle self, PriorityVehicle pv) {
+        Vector2D pvDir = movementDirection(pv);
+        if (pvDir.length() < 1e-9) return false;
+
+        Vector2D toSelf = self.getEffectivePosition().subtract(pv.getEffectivePosition());
+        double forwardDist = pvDir.dot(toSelf);
+        // Xe thường phải ở phía trước xe ưu tiên
+        if (forwardDist <= 0) return false;
+
+        // Kiểm tra lệch ngang — không được vượt quá nửa chiều rộng làn của mỗi xe
+        Vector2D lateral = toSelf.subtract(pvDir.multiply(forwardDist));
+        double laneThreshold = (pv.getWidth() + self.getWidth()) / 2.0 + 6.0;
+        return lateral.length() <= laneThreshold;
     }
 
     /**

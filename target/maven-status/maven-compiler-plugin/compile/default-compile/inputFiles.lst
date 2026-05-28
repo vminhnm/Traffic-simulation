@@ -49,7 +49,9 @@ C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\graphics\renderer\Ren
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\graphics\renderer\RenderMode.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\graphics\sprite\RenderAssetKey.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\graphics\sprite\SpriteLoader.java
+C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\sound\SoundLibrary.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\sound\SoundManager.java
+C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\sound\SoundPlayer.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\sound\SoundType.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\ui\TrafficSimulationUI.java
 C:\Users\Lenovo\Documents\Traffic-simulation\src\main\java\util\Direction.java

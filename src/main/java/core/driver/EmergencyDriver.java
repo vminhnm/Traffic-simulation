@@ -48,11 +48,44 @@ public class EmergencyDriver implements DriverBehavior {
         double gap = RULES.gapToFrontVehicle(vehicle, world);
 
         if (gap >= 0 && gap < CRITICAL_GAP) {
-            // Giảm tốc vừa phải để chờ xe thường nhường đường
-            return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
+            // Kiểm tra xe phía trước có chỗ sang bên không
+            boolean frontCanYield = canFrontVehicleYield(vehicle, world);
+            if (frontCanYield) {
+                // Chờ thêm một chút rồi tiếp tục — xe phía trước đang dạt
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.5);
+            } else {
+                // Không có chỗ → xe ưu tiên phải chậm lại, không đâm
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.15);
+            }
         }
 
         return DrivingDecision.emergencyPass(vehicle.getMaxSpeed() * SPEED_FACTOR);
+    }
+
+    /**
+     * Kiểm tra xe gần nhất phía trước xe ưu tiên có chỗ sang bên không.
+     * Nếu có ít nhất một bên trống, xe đó có thể nhường đường.
+     */
+    private boolean canFrontVehicleYield(Vehicle priorityVehicle, core.simulation.SimulationWorld world) {
+        util.Vector2D pos = priorityVehicle.getEffectivePosition();
+        return world.getVehicles().stream()
+                .filter(v -> v != priorityVehicle)
+                .filter(v -> !v.isCrashed() && !v.isFinished())
+                .filter(v -> isAheadOf(priorityVehicle, v))
+                .findFirst()
+                .map(front -> RULES.isSideClear(front, world, +1) || RULES.isSideClear(front, world, -1))
+                .orElse(true);
+    }
+
+    private boolean isAheadOf(Vehicle self, Vehicle other) {
+        util.Vector2D vel = self.getVelocity();
+        if (vel.length() < 1e-9) return false;
+        util.Vector2D dir = vel.normalize();
+        util.Vector2D toOther = other.getEffectivePosition().subtract(self.getEffectivePosition());
+        double fwd = dir.dot(toOther);
+        if (fwd <= 0 || fwd > 120) return false;
+        util.Vector2D lateral = toOther.subtract(dir.multiply(fwd));
+        return lateral.length() <= (self.getWidth() + other.getWidth());
     }
 
     @Override

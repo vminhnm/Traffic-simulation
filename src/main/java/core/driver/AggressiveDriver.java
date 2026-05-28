@@ -5,7 +5,6 @@ import core.simulation.SimulationWorld;
 import core.trafficlight.LightColor;
 import core.vehicle.PriorityVehicle;
 import core.vehicle.Vehicle;
-import util.Vector2D;
 import java.util.Optional;
 
 /**
@@ -28,33 +27,22 @@ public class AggressiveDriver implements DriverBehavior {
     private static final double SPEED_FACTOR = 1.25;
     /** Hệ số khoảng cách an toàn (nhỏ hơn → bám sát hơn). */
     private static final double SAFE_DIST_FACTOR = 0.6;
-    private static final double SAFETY_STOP_RANGE = 200.0;
 
     @Override
     public DrivingDecision decide(Vehicle vehicle, SimulationWorld world) {
 
-        // ── 1. Vẫn phải nhường xe ưu tiên (ưu tiên hơn đèn đỏ) ──────
+        // ── 1. Vẫn phải nhường xe ưu tiên: chỉ phanh/dừng, không chuyển làn ─────
         if (RULES.shouldYieldToPriorityVehicle(vehicle, world)) {
             Optional<PriorityVehicle> priorityVehicle = RULES.nearestActivePriorityVehicle(vehicle, world);
             if (priorityVehicle.isPresent()) {
                 PriorityVehicle pv = priorityVehicle.get();
-                String myPathId = vehicle.getPath().getId();
-                String theirPathId = pv.getPath().getId();
+                double dist = pv.getPosition().distanceTo(vehicle.getPosition());
 
-                // Extract lane type (first 2-3 chars before numbers)
-                String myLaneType = myPathId.replaceAll("[0-9]", "");
-                String theirLaneType = theirPathId.replaceAll("[0-9]", "");
-
-                // Same lane → move out
-                if (myLaneType.equals(theirLaneType)) {
-                    return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * 0.3);
-                }
-
-                // Different lane → stop if in range and not already moving out
-                double dist = vehicle.getPosition().distanceTo(pv.getPosition());
-                if (dist < SAFETY_STOP_RANGE && Math.abs(vehicle.getLateralOffset()) < 30) {
+                if (dist < vehicle.getLength() * 2.5) {
                     return DrivingDecision.stop();
                 }
+                // Hung hăng vẫn phải nhường — phanh mạnh
+                return DrivingDecision.brake(vehicle.getMaxSpeed() * 0.15);
             }
         }
 
@@ -76,11 +64,15 @@ public class AggressiveDriver implements DriverBehavior {
             }
         }
 
-        // ── 3. Khoảng cách bám sát ──────────────────────────────────
+        // ── 3. Khoảng cách bám sát — hoặc vượt tích cực ────────────
         double gap          = RULES.gapToFrontVehicle(vehicle, world);
         double safeDistance = vehicle.getLength() * 1.5 * SAFE_DIST_FACTOR + 8;
 
         if (gap >= 0 && gap < safeDistance) {
+            // Aggressive: thử vượt trước khi phanh
+            if (RULES.canOvertake(vehicle, world)) {
+                return DrivingDecision.changeLaneLeft(vehicle.getMaxSpeed() * SPEED_FACTOR);
+            }
             double ratio = Math.max(0, gap / safeDistance);
             return DrivingDecision.brake(vehicle.getMaxSpeed() * ratio * 0.4);
         }
